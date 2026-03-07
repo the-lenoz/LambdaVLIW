@@ -18,5 +18,6 @@ int main(int argc, char **argv)
              -1;
   }
 
-  return parse_stream(fp, close);
+  parse_stream(fp, close);
+  return 0;
 }
