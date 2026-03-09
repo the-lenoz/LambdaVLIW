@@ -8,7 +8,7 @@ clean:
 	@rm parser || true
 	@echo "Done!"
 
-parser: parser.o main.o
+parser: AST.o parser.o main.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c

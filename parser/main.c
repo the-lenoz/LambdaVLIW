@@ -18,6 +18,9 @@ int main(int argc, char **argv)
              -1;
   }
 
-  parse_stream(fp, close);
+  D_AST(parse_stream(fp, close));
+
+  
+  
   return 0;
 }
