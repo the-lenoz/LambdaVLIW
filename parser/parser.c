@@ -1,6 +1,6 @@
 #include "parser.h"
 #include "AST.h"
-#include "memdup.h"
+#include <string.h>
 #include <malloc.h>
 #include <stdio.h>
 
@@ -61,7 +61,7 @@ static AST *parse_sexp(const char **cursor, const char *end)
     return D_AST(result), NULL;
   ++*cursor;
   result->value_len = *cursor - start;
-  result->value = memdup(start, result->value_len);
+  result->value = strndup(start, result->value_len);
   return result;
 }
 

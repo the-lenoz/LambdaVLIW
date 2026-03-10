@@ -8,7 +8,7 @@ AST *N_AST(AST_T type, int value_len, const char *value, AST *lchild, AST *rchil
   AST *result = malloc(sizeof(AST));
   if (!result)
     return NULL;
-  *result = (AST){type, value_len, value ? memcpy(malloc(value_len), value, value_len) : NULL, lchild, rchild};
+  *result = (AST){type, value_len, value ? strndup(value, value_len) : NULL, lchild, rchild};
   return result;
 }
 
