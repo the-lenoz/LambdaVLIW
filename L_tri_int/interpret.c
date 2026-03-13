@@ -1,53 +1,66 @@
 #include "../parser/parser.h"
+#include "../htable/htable.h"
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define DEFAULT_VARS_NUM 1024
 
-int evaluate(AST *expr, int vars_array_size, const int *vars_array)
+size_t strhash(const void *k)
+{
+  const unsigned char *str = (const unsigned char *)k;
+  size_t hash = 5381;
+  int c;
+
+  while ((c = *str++))
+  {
+    // hash = hash * 33 + c
+    hash = ((hash << 5) + hash) + c;
+  }
+
+  return hash;
+}
+int str_eq(const void *a, const void *b) { return !strcmp(a, b); }
+
+void free_str(HTable *ht, void *k, void *v) { free(k); }
+void *k_dup(const void *k) { return strdup(k); }
+void*v_dup(const void*v){return (void*)(size_t)v;}
+
+int evaluate(AST *expr, HTable *var_tab)
 {
   if (!expr || expr->type != SEXP)
     return fprintf(stderr, "Fatal: S-exp expected, got nil\n"), -1;
 
-  int l_arg, r_arg;
-  if (*expr->rchild->lchild->value >= '0' && *expr->rchild->lchild->value <= '9')
+  ssize_t l_arg, r_arg;
+  if (expr->rchild->lchild->type == CONST_NUM)
     l_arg = atoi(expr->rchild->lchild->value);
   else
   {
-    if (strncmp(expr->rchild->lchild->value, "var", 3))
-      return fprintf(stderr, "Fatal: 'var' expected, got: '%s'\n", expr->rchild->lchild->value), -1;
-    int l_var_num = atoi(expr->rchild->lchild->value + 3);
-    if (l_var_num >= vars_array_size)
+    if (!ht_get(var_tab, expr->rchild->lchild->value, (void**)&l_arg))
       return fprintf(stderr, "Fatal: undefined variable '%s'\n", expr->rchild->lchild->value), -1;
-    l_arg = vars_array[l_var_num];
   }
-  if (*expr->rchild->rchild->lchild->value >= '0' && *expr->rchild->rchild->lchild->value <= '9')
+  if (expr->rchild->rchild->lchild->type == CONST_NUM)
     r_arg = atoi(expr->rchild->rchild->lchild->value);
   else
   {
-    if (strncmp(expr->rchild->rchild->lchild->value, "var", 3))
-      return fprintf(stderr, "Fatal: 'var' expected, got: '%s'\n", expr->rchild->rchild->lchild->value), -1;
-    int r_var_num = atoi(expr->rchild->rchild->lchild->value + 3);
-    if (r_var_num >= vars_array_size)
-      return fprintf(stderr, "Fatal: undefined variable '%s'\n", expr->rchild->rchild->lchild->value), -1;
-    r_arg = vars_array[r_var_num];
-  }  
+    if (!ht_get(var_tab, expr->rchild->rchild->lchild->value, (void**)&r_arg))
+      return fprintf(stderr, "Fatal: undefined variable '%s'\n", expr->rchild->lchild->value), -1;
+  }
 
-  int result;
   switch (*expr->lchild->value)
   {
   case '+':
     return l_arg + r_arg;
     break;
   case '-':
-    return l_arg - r_arg;    
+    return l_arg - r_arg;
     break;
   case '*':
-    return l_arg * r_arg;    
+    return l_arg * r_arg;
     break;
   case '/':
-    return l_arg / r_arg;    
+    return l_arg / r_arg;
     break;
   default:
     return fprintf(stderr, "Fatal: binary arithmetic operator expected, got: '%s'\n", expr->lchild->value), -1;
@@ -56,9 +69,7 @@ int evaluate(AST *expr, int vars_array_size, const int *vars_array)
 
 int interpret_list(AST *tree)
 {
-  int result = 0;
-  int vars_num = DEFAULT_VARS_NUM;
-  int *vars = calloc(vars_num, sizeof(int));
+  HTable *var_tab = ht_init(strhash, str_eq, k_dup, v_dup, free_str, 0);
 
   if (!tree || tree->type != SEXP)
     return fprintf(stderr, "Fatal: unexpected expression type\n"), -1;
@@ -71,20 +82,7 @@ int interpret_list(AST *tree)
     if (strcmp(instr->lchild->lchild->value, "let"))
       return fprintf(stderr, "Fatal: 'let' block expected. got: '%s'\n", instr->lchild->lchild->value), -1;
 
-    if (!strcmp(instr->lchild->rchild->lchild->value, "res"))
-    {
-      result = evaluate(instr->lchild->rchild->rchild->lchild, vars_num, vars);
-      break;
-    }
-    if (strncmp(instr->lchild->rchild->lchild->value, "var", 3))
-      return fprintf(stderr, "Fatal: 'var' expected. got: '%s'\n", instr->lchild->rchild->value), -1;
-    var_num = atoi(instr->lchild->rchild->lchild->value + 3); // "varXX" strip "var" str
-    if (var_num >= vars_num)
-    {
-      vars_num = var_num * 2;
-      vars = realloc(vars, vars_num * sizeof(int));
-    }
-    vars[var_num] = evaluate(instr->lchild->rchild->rchild->lchild, vars_num, vars);
+    ht_set(var_tab, instr->lchild->rchild->lchild->value, (void*)(ssize_t)evaluate(instr->lchild->rchild->rchild->lchild, var_tab));
 
     if (first)
     {
@@ -96,7 +94,10 @@ int interpret_list(AST *tree)
       instr = instr->rchild;
     }
   }
-  free(vars);
+  ssize_t result;
+  if (!ht_get(var_tab, "res", (void **)&result))
+    return fprintf(stderr, "Fatal: no such result in the program.\n"), -1;
+  ht_destroy(var_tab);
   return result;
 }
 
