@@ -3,6 +3,13 @@
 
 #include <stdio.h>
 
+#define CAR(x) ((x)->lchild)
+#define CDR(x) ((x)->rchild)
+#define FIRST(x) CAR(x)
+#define SECOND(x) CAR(CDR(x))
+#define THIRD(x) CAR(CDR(CDR(x)))
+
+
 typedef enum
 {
   PROGRAM,
@@ -27,6 +34,8 @@ typedef struct _ast
 
 
 AST *N_AST(AST_T type, int value_len, const char *value, AST *lchild, AST *rchild);
+
+AST *copy_AST(AST *tree);
 
 void D_AST(AST *node);
 

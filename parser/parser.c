@@ -44,7 +44,7 @@ static AST *parse_list(const char **cursor, const char *end)
   if (!lchild)
     return NULL;
 
-  return N_AST(LIST, *cursor - start, start, lchild, rchild);
+  return N_AST(SEXP, *cursor - start, start, lchild, rchild);
 }
 
 static AST *parse_sexp(const char **cursor, const char *end)
@@ -166,8 +166,6 @@ AST *parse_stream(FILE *fp, int close)
   buffer = realloc(buffer, readed);
 
   AST *result = parse_buffer(readed, buffer);
-
-  print_AST(result, stdout);
 
   free(buffer);
 

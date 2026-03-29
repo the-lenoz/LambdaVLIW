@@ -12,6 +12,13 @@ AST *N_AST(AST_T type, int value_len, const char *value, AST *lchild, AST *rchil
   return result;
 }
 
+AST *copy_AST(AST *tree)
+{
+  if (!tree)
+    return NULL;
+  return N_AST(tree->type, tree->value_len, tree->value, copy_AST(tree->lchild), copy_AST(tree->rchild));
+}
+
 void D_AST(AST *node)
 {
   if (!node)
@@ -40,21 +47,29 @@ static void print_node(AST *node, FILE *fp, int depth)
   switch (node->type)
   {
   case PROGRAM:
-    fprintf(fp, "program");break;
+    fprintf(fp, "program");
+    break;
   case CODE_BLOCK:
-    fprintf(fp, "code_block");break;
+    fprintf(fp, "code_block");
+    break;
   case SEXP:
-    fprintf(fp, "S_exp");break;
+    fprintf(fp, "S_exp");
+    break;
   case LIST:
-    fprintf(fp, "list");break;
+    fprintf(fp, "list");
+    break;
   case NAME:
-    fprintf(fp, "name");break;
+    fprintf(fp, "name");
+    break;
   case CONST_NUM:
-    fprintf(fp, "const_num");break;
+    fprintf(fp, "const_num");
+    break;
   case CONST_STR:
-    fprintf(fp, "const_str");break;
+    fprintf(fp, "const_str");
+    break;
   default:
-    fprintf(fp, "unknown");break;
+    fprintf(fp, "unknown");
+    break;
   }
   putc('\n', fp);
   print_node(node->lchild, fp, depth + 2);
