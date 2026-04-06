@@ -81,21 +81,24 @@ static char *div_num(const char *a, const char *b)
   return itoa(atoi(a) / atoi(b), calloc(strlen(a), sizeof(char)), 10);
 }
 
+static int is_redefined(const char *name, AST *let)
+{
+  return 0; // add checking
+}
+
 static AST *inline_var(AST *expr, const char *name, const AST *value)
 {
+  AST *head, *tail;
   if (!expr)
     return NULL;
-  if (expr->type == NAME)
+  if (expr->type == NAME && !strcmp(name, expr->value))
   {
-    if (!strcmp(name, expr->value))
-      return copy_AST(value);
-    if (!strcmp(name, "let"))
-    {
-      // check redef
-    }
+    return copy_AST(value);
   }
-  if (expr->type == CONST_NUM || expr->type == CONST_STR) return copy_AST(expr);  
-  AST *head, *tail;
+  if (expr->type == CONST_NUM || expr->type == CONST_STR)
+    return copy_AST(expr);
+  if (expr->type == SEXP && !strcmp("let", GET_OP(expr)) && is_redefined(name, expr))
+    return copy_AST(expr);
   head = inline_var(CAR(expr), name, value);
   tail = inline_var(CDR(expr), name, value);
   D_AST(CAR(expr));
@@ -178,6 +181,11 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   AST *value = eval_expr(SECOND(expr), funcs);
   D_AST(SECOND(expr));
   SECOND(expr) = value;
+  if (!value)
+  {
+    printf("nil\n");
+    return NULL;
+  }
   const char *c = NULL;
   switch (value->type)
   {
@@ -199,6 +207,20 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
     break;
   }
   STR_CASE("let")
+  AST *var_list = SECOND(expr);
+  AST *result = THIRD(expr);
+  AST *tmp = result;
+  int free = 0;
+  while (var_list)
+  {
+    tmp = result;
+    result = inline_var(result, GET_OP(FIRST(var_list)), SECOND(FIRST(var_list)));
+    if (free)
+      D_AST(tmp);
+    free = 1;
+    var_list = CDR(var_list);
+  }
+  return tmp == result ? copy_AST(result) : result;
 
   STR_DEFAULT
   AST *fun = NULL;
@@ -215,6 +237,7 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
 
 static AST *eval_expr(AST *expr, HTable *funcs)
 {
+  if (!expr) return NULL;
   AST *expr_copy = copy_AST(expr);
   if (expr_copy->type != SEXP)
     return expr_copy; // throw consts
