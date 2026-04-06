@@ -35,7 +35,7 @@ typedef struct _ast
 
 AST *N_AST(AST_T type, int value_len, const char *value, AST *lchild, AST *rchild);
 
-AST *copy_AST(AST *tree);
+AST *copy_AST(const AST *tree);
 
 void D_AST(AST *node);
 

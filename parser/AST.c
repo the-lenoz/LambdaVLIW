@@ -12,7 +12,7 @@ AST *N_AST(AST_T type, int value_len, const char *value, AST *lchild, AST *rchil
   return result;
 }
 
-AST *copy_AST(AST *tree)
+AST *copy_AST(const AST *tree)
 {
   if (!tree)
     return NULL;

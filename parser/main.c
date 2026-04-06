@@ -1,3 +1,4 @@
+#include "AST.h"
 #include "parser.h"
 #include <stdio.h>
 
@@ -18,9 +19,10 @@ int main(int argc, char **argv)
              -1;
   }
 
-  D_AST(parse_stream(fp, close));
+  AST *result = parse_stream(fp, close);
 
+  print_AST(result, stdout);
   
-  
+  D_AST(result);
   return 0;
 }

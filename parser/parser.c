@@ -79,7 +79,8 @@ static AST *parse_string(const char **cursor, const char *end)
   if (!skip_spaces(cursor, end))
     return NULL;
   const char *start = *cursor;
-  for (int escaped = 0; escaped || **cursor != '"'; escaped ^= ('\\' == *((*cursor)++)))
+  ++*cursor;
+  for (int escaped = 0; (escaped || **cursor != '"') && *cursor < end; escaped = ('\\' == *((*cursor)++) && !escaped))
     ;
   ++*cursor;
   return *cursor > start ? N_AST(CONST_STR, *cursor - start, start, NULL, NULL) : NULL;
