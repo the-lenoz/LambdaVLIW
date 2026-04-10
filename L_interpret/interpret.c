@@ -112,9 +112,13 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
 {
   assert(CAR(expr)->type == NAME);
 
+  call_trace.trace[call_trace.depth] = (call_t){call_trace.depth, GET_OP(expr), expr};
+  call_trace.depth++;
+  AST *eval_result = NULL;
+
   STR_MATCH(GET_OP(expr))
   STR_CASE("quote")
-  return copy_AST(SECOND(expr)); // block evaluation
+  eval_result = copy_AST(SECOND(expr)); // block evaluation
 
   STR_CASE("+")
   AST *a = eval_expr(SECOND(expr), funcs);
@@ -123,9 +127,8 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   D_AST(THIRD(expr));
   SECOND(expr) = a, THIRD(expr) = b;
   char *result = add_num(a->value, b->value);
-  AST *val = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
+  AST *eval_result = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
   free(result);
-  return val;
 
   STR_CASE("-")
   AST *a = eval_expr(SECOND(expr), funcs);
@@ -134,9 +137,8 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   D_AST(THIRD(expr));
   SECOND(expr) = a, THIRD(expr) = b;
   char *result = sub_num(a->value, b->value);
-  AST *val = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
+  AST *eval_result = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
   free(result);
-  return val;
 
   STR_CASE("*")
   AST *a = eval_expr(SECOND(expr), funcs);
@@ -145,9 +147,8 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   D_AST(THIRD(expr));
   SECOND(expr) = a, THIRD(expr) = b;
   char *result = mul_num(a->value, b->value);
-  AST *val = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
+  AST *eval_result = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
   free(result);
-  return val;
 
   STR_CASE("/")
   AST *a = eval_expr(SECOND(expr), funcs);
@@ -156,15 +157,14 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   D_AST(THIRD(expr));
   SECOND(expr) = a, THIRD(expr) = b;
   char *result = div_num(a->value, b->value);
-  AST *val = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
+  AST *eval_result = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
   free(result);
-  return val;
 
   STR_CASE("car")
-  return copy_AST(CAR(expr));
+  eval_result = copy_AST(CAR(expr));
 
   STR_CASE("cdr")
-  return copy_AST(CDR(expr));
+  eval_result = copy_AST(CDR(expr));
 
   STR_CASE("cons")
   AST *a = eval_expr(SECOND(expr), funcs);
@@ -172,7 +172,7 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   D_AST(SECOND(expr));
   D_AST(THIRD(expr));
   SECOND(expr) = a, THIRD(expr) = b;
-  return N_AST(SEXP, 0, NULL, a, b);
+  eval_result = N_AST(SEXP, 0, NULL, a, b);
 
   STR_CASE("cond")
   // COND
@@ -184,27 +184,29 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   if (!value)
   {
     printf("nil\n");
-    return NULL;
   }
-  const char *c = NULL;
-  switch (value->type)
+  else
   {
-  case CONST_NUM:
-    printf("%s\n", value->value);
-    break;
-  case CONST_STR:
-    c = value->value + 1;
-    for (int escaped = 0; (*c != '"' || escaped) &&
-                          c < value->value + value->value_len;
-         c += (escaped ? 2 : 1), escaped = 0)
+    const char *c = NULL;
+    switch (value->type)
     {
-      escaped = *c == '\\' && !escaped;
-      putchar(escaped ? ESC2C(*(c + 1)) : *c);
+    case CONST_NUM:
+      printf("%s\n", value->value);
+      break;
+    case CONST_STR:
+      c = value->value + 1;
+      for (int escaped = 0; (*c != '"' || escaped) &&
+                            c < value->value + value->value_len;
+           c += (escaped ? 2 : 1), escaped = 0)
+      {
+        escaped = *c == '\\' && !escaped;
+        putchar(escaped ? ESC2C(*(c + 1)) : *c);
+      }
+      break;
+    default:
+      print_AST(value, stdout);
+      break;
     }
-    break;
-  default:
-    print_AST(value, stdout);
-    break;
   }
   STR_CASE("let")
   AST *var_list = SECOND(expr);
@@ -220,24 +222,28 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
     free = 1;
     var_list = CDR(var_list);
   }
-  return tmp == result ? copy_AST(result) : result;
+  eval_result = tmp == result ? copy_AST(result) : result;
 
   STR_DEFAULT
   AST *fun = NULL;
-  if (!ht_get(funcs, GET_OP(expr), (void **)&fun))
+  if (ht_get(funcs, GET_OP(expr), (void **)&fun))
   {
-    // ERROR
-    return NULL;
+    
   }
-
+  else
+  {
+    err = (err_t){FATAL, "Call to undefined function"};
+  }
+  
   STR_MATCH_END
 
-  return NULL;
+  return eval_result;
 }
 
 static AST *eval_expr(AST *expr, HTable *funcs)
 {
-  if (!expr) return NULL;
+  if (!expr)
+    return NULL;
   AST *expr_copy = copy_AST(expr);
   if (expr_copy->type != SEXP)
     return expr_copy; // throw consts
@@ -267,15 +273,15 @@ static int interpret_stmt(AST *stmt, HTable *funcs)
   }
   else
     D_AST(eval_expr(stmt, funcs));
-  return 0;
+  return err.kind == OK ? 0 : -1;
 }
 
 int interpret_program(AST *program, AST *arg_data)
 {
   HTable *functions = ht_init(hash, str_eq, k_dup, v_dup, free_str, 0);
-
+  err = (err_t){OK, NULL};
   int status = 0;
-  for (AST *block = program->lchild; block && status != -1; block = block->rchild)
+  for (AST *block = program->lchild; block && err.kind == OK && status != -1; block = block->rchild)
     status = interpret_stmt(block->lchild, functions);
 
   ht_destroy(functions);

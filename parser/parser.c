@@ -1,8 +1,8 @@
 #include "parser.h"
 #include "AST.h"
-#include <string.h>
 #include <malloc.h>
 #include <stdio.h>
+#include <string.h>
 
 #define DEFAULT_BUFFER_SIZE 64
 
@@ -62,6 +62,11 @@ static AST *parse_sexp(const char **cursor, const char *end)
   ++*cursor;
   result->value_len = *cursor - start;
   result->value = strndup(start, result->value_len);
+  if (!result->lchild && !result->lchild)
+  {
+    D_AST(result);
+    return NULL;
+  }
   return result;
 }
 
