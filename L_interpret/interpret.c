@@ -175,8 +175,15 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   eval_result = N_AST(SEXP, 0, NULL, a, b);
 
   STR_CASE("cond")
-  // COND
-
+  for (AST *case_list = CDR(expr); case_list; case_list = CDR(case_list))
+  {
+    if (is_true(eval_expr(FIRST(CAR(case_list)), funcs)))
+    {
+      eval_result = eval_expr(SECOND(CAR(case_list)));
+      break;
+    }
+  }
+  
   STR_CASE("print")
   AST *value = eval_expr(SECOND(expr), funcs);
   D_AST(SECOND(expr));
@@ -236,6 +243,9 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   }
   
   STR_MATCH_END
+
+  if (err.kind == OK)
+    call_trace.depth--;
 
   return eval_result;
 }
