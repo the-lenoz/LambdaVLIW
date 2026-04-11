@@ -212,14 +212,14 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   AST *var_list = SECOND(expr);
   AST *result = THIRD(expr);
   AST *tmp = result;
-  int free = 0;
+  int is_free = 0;
   while (var_list)
   {
     tmp = result;
     result = inline_var(result, GET_OP(FIRST(var_list)), SECOND(FIRST(var_list)));
-    if (free)
+    if (is_free)
       D_AST(tmp);
-    free = 1;
+    is_free = 1;
     var_list = CDR(var_list);
   }
   eval_result = tmp == result ? copy_AST(result) : result;
