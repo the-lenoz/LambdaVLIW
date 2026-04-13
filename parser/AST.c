@@ -34,6 +34,13 @@ void D_AST(AST *node)
   free(node);
 }
 
+int list_len(AST *list)
+{
+  if (!list)
+    return 0;
+  return 1 + list_len(CDR(list));
+}    
+
 static void print_node(AST *node, FILE *fp, int depth)
 {
   for (int i = 0; i < depth; ++i)

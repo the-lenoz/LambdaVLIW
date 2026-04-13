@@ -22,10 +22,11 @@
 
 #define STR_MATCH(val)                      \
   const char *_str_switch_internal = (val); \
+  if (0)                                    \
   {
-#define STR_CASE(pattern)                     \
-  }                                           \
-  if (!strcmp(pattern, _str_switch_internal)) \
+#define STR_CASE(pattern)                          \
+  }                                                \
+  else if (!strcmp(pattern, _str_switch_internal)) \
   {
 #define STR_DEFAULT \
   }                 \
@@ -64,6 +65,28 @@ static err_t err = {};
 static AST *eval_expr(AST *expr, HTable *funcs);
 static int max(int a, int b) { return a > b ? a : b; }
 
+#define OPT(x) STR_CASE(x) return x;
+static char *op_copy(const char *op)
+{
+  STR_MATCH(op)
+  OPT("quote")
+  OPT("+")
+  OPT("-")
+  OPT("*")
+  OPT("/")
+  OPT("car")
+  OPT("cdr")
+  OPT("cons")
+  OPT("cond")
+  OPT("print")
+  OPT("let")
+  OPT("defun")
+  STR_DEFAULT
+  return "<defined>";
+  STR_MATCH_END
+}
+#undef OPT
+
 static char *add_num(const char *a, const char *b)
 {
   return itoa(atoi(a) + atoi(b), calloc(max(strlen(a), strlen(b)) + 1, sizeof(char)), 10);
@@ -84,6 +107,19 @@ static char *div_num(const char *a, const char *b)
 static int is_redefined(const char *name, AST *let)
 {
   return 0; // add checking
+}
+
+static int is_true(AST *value)
+{
+  switch (value->type)
+  {
+  case CONST_NUM:
+    return *value->value != '0';
+  case CONST_STR:
+    return value->value_len != 0;
+  default:
+    return 1;
+  }
 }
 
 static AST *inline_var(AST *expr, const char *name, const AST *value)
@@ -112,7 +148,7 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
 {
   assert(CAR(expr)->type == NAME);
 
-  call_trace.trace[call_trace.depth] = (call_t){call_trace.depth, GET_OP(expr), expr};
+  call_trace.trace[call_trace.depth] = (call_t){call_trace.depth, op_copy(GET_OP(expr)), expr};
   call_trace.depth++;
   AST *eval_result = NULL;
 
@@ -127,7 +163,7 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   D_AST(THIRD(expr));
   SECOND(expr) = a, THIRD(expr) = b;
   char *result = add_num(a->value, b->value);
-  AST *eval_result = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
+  eval_result = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
   free(result);
 
   STR_CASE("-")
@@ -137,7 +173,7 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   D_AST(THIRD(expr));
   SECOND(expr) = a, THIRD(expr) = b;
   char *result = sub_num(a->value, b->value);
-  AST *eval_result = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
+  eval_result = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
   free(result);
 
   STR_CASE("*")
@@ -147,7 +183,7 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   D_AST(THIRD(expr));
   SECOND(expr) = a, THIRD(expr) = b;
   char *result = mul_num(a->value, b->value);
-  AST *eval_result = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
+  eval_result = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
   free(result);
 
   STR_CASE("/")
@@ -157,7 +193,7 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   D_AST(THIRD(expr));
   SECOND(expr) = a, THIRD(expr) = b;
   char *result = div_num(a->value, b->value);
-  AST *eval_result = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
+  eval_result = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
   free(result);
 
   STR_CASE("car")
@@ -169,21 +205,22 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   STR_CASE("cons")
   AST *a = eval_expr(SECOND(expr), funcs);
   AST *b = eval_expr(THIRD(expr), funcs);
-  D_AST(SECOND(expr));
-  D_AST(THIRD(expr));
-  SECOND(expr) = a, THIRD(expr) = b;
   eval_result = N_AST(SEXP, 0, NULL, a, b);
 
   STR_CASE("cond")
+  AST *tmp;
   for (AST *case_list = CDR(expr); case_list; case_list = CDR(case_list))
   {
-    if (is_true(eval_expr(FIRST(CAR(case_list)), funcs)))
+    tmp = FIRST(CAR(case_list));
+    FIRST(CAR(case_list)) = eval_expr(tmp, funcs);
+    D_AST(tmp);
+    if (is_true(FIRST(CAR(case_list))))
     {
-      eval_result = eval_expr(SECOND(CAR(case_list)));
+      eval_result = eval_expr(SECOND(CAR(case_list)), funcs);
       break;
     }
   }
-  
+
   STR_CASE("print")
   AST *value = eval_expr(SECOND(expr), funcs);
   D_AST(SECOND(expr));
@@ -235,13 +272,27 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   AST *fun = NULL;
   if (ht_get(funcs, GET_OP(expr), (void **)&fun))
   {
-    
+    AST *args = CDR(expr);
+    if (list_len(args) == list_len(SECOND(fun)))
+    {
+      eval_result = CONS(N_AST(NAME, 3, "let", NULL, NULL), CONS(NULL, CONS(copy_AST(THIRD(fun)), NULL)));
+      AST **dst = &SECOND(eval_result);
+      while (args)
+      {
+	*dst = CONS(CAR(args), NULL);
+	dst = &CDR(*dst);
+	CAR(args) = NULL;
+        args = CDR(args);
+      }
+      AST *tmp = eval_result;
+      eval_result = eval_expr(eval_result, funcs);
+      D_AST(tmp);
+    }
+    else
+      err = (err_t){FATAL, "Call args num mismatch"};
   }
   else
-  {
     err = (err_t){FATAL, "Call to undefined function"};
-  }
-  
   STR_MATCH_END
 
   if (err.kind == OK)

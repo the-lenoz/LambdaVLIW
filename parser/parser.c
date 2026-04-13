@@ -62,11 +62,6 @@ static AST *parse_sexp(const char **cursor, const char *end)
   ++*cursor;
   result->value_len = *cursor - start;
   result->value = strndup(start, result->value_len);
-  if (!result->lchild && !result->lchild)
-  {
-    D_AST(result);
-    return NULL;
-  }
   return result;
 }
 
@@ -134,6 +129,22 @@ static AST *parse_code_block(const char **cursor, const char *end)
   AST *rchild = parse_code_block(cursor, end);
   return N_AST(CODE_BLOCK, *cursor - start, start, lchild, rchild);
 }
+
+static int walk_replace_emty_list(AST **tree)
+{
+  int replaced = 0;
+
+  if (!tree || !*tree) return 0;
+  
+  if ((*tree)->type == SEXP && !CAR(*tree) && !CDR(*tree)) {
+    D_AST(*tree);
+    *tree = NULL;
+    replaced = 1;
+  }
+
+  return replaced || walk_replace_emty_list(&CAR(*tree)) || walk_replace_emty_list(&CDR(*tree));
+}    
+
 static AST *parse_program(const char **cursor, const char *end)
 {
   if (!cursor || !end || !*cursor)
@@ -142,6 +153,7 @@ static AST *parse_program(const char **cursor, const char *end)
   const char *start = *cursor;
 
   AST *lchild = parse_code_block(cursor, end);
+  walk_replace_emty_list(&lchild);
   return N_AST(PROGRAM, *cursor - start, start, lchild, NULL);
 }
 

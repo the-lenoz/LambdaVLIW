@@ -9,6 +9,8 @@
 #define SECOND(x) CAR(CDR(x))
 #define THIRD(x) CAR(CDR(CDR(x)))
 
+#define CONS(a, b) N_AST(SEXP, 0, NULL, a, b)
+
 
 typedef enum
 {
@@ -36,6 +38,8 @@ typedef struct _ast
 AST *N_AST(AST_T type, int value_len, const char *value, AST *lchild, AST *rchild);
 
 AST *copy_AST(const AST *tree);
+
+int list_len(AST *list);
 
 void D_AST(AST *node);
 
