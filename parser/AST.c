@@ -39,7 +39,7 @@ int list_len(AST *list)
   if (!list)
     return 0;
   return 1 + list_len(CDR(list));
-}    
+}
 
 static void print_node(AST *node, FILE *fp, int depth)
 {
@@ -88,5 +88,53 @@ static void print_node(AST *node, FILE *fp, int depth)
 void print_AST(AST *node, FILE *fp)
 {
   print_node(node, fp, 0);
+  putc('\n', fp);
+}
+
+void dump_node(AST *node, FILE *fp, int indent, int depth)
+{
+  for (int i = 0; i < depth && indent; ++i)
+    putc(' ', fp);
+  if (!node)
+  {
+    fprintf(fp, "nil");
+    return;
+  }
+  switch (node->type)
+  {
+  case PROGRAM:
+    dump_node(node->lchild, fp, 0, 0);
+    return;
+  case CODE_BLOCK:
+    dump_node(node->lchild, fp, 0, 0);
+    if (node->rchild)
+    {
+      putc('\n', fp);
+      dump_node(node->rchild, fp, 0, 0);
+    }
+    return;
+  case SEXP:
+    putc('(', fp);
+    for (AST *arg = node; arg; arg = CDR(arg))
+    {
+      dump_node(CAR(arg), fp, arg != node, depth + 2);
+      if (CDR(arg))
+        putc('\n', fp);
+    }
+    putc(')', fp);
+    return;
+  case CONST_NUM:
+  case CONST_STR:
+  case NAME:
+    fputs(node->value, fp);
+    return;
+  default:
+    return;
+  }
+}
+
+void dump_AST(AST *node, FILE *fp)
+{
+  dump_node(node, fp, 0, 0);
   putc('\n', fp);
 }

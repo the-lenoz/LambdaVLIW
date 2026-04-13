@@ -74,6 +74,14 @@ static char *op_copy(const char *op)
   OPT("-")
   OPT("*")
   OPT("/")
+  OPT("<")
+  OPT(">")
+  OPT("==")
+  OPT("<=")
+  OPT(">=")
+  OPT("and")
+  OPT("or")
+  OPT("not")
   OPT("car")
   OPT("cdr")
   OPT("cons")
@@ -102,6 +110,37 @@ static char *mul_num(const char *a, const char *b)
 static char *div_num(const char *a, const char *b)
 {
   return itoa(atoi(a) / atoi(b), calloc(strlen(a), sizeof(char)), 10);
+}
+
+static const char *lt_num(const char *a, const char *b)
+{
+  return atoi(a) < atoi(b) ? "1" : "0";
+}
+
+static const char *gt_num(const char *a, const char *b)
+{
+  return atoi(a) > atoi(b) ? "1" : "0";
+}
+
+static const char *eq_num(const char *a, const char *b)
+{
+  return atoi(a) == atoi(b) ? "1" : "0";
+}
+
+static const char *not_bool(const char *x)
+{
+  return *x == '0' ? "1" : !strcmp(x, "nil") ? "1"
+                                             : "0";
+}
+
+static const char *and_bool(const char *a, const char *b)
+{
+  return atoi(not_bool(not_bool(a))) && atoi(not_bool(not_bool(b))) ? "1" : "0";
+}
+
+static const char *or_bool(const char *a, const char *b)
+{
+  return atoi(not_bool(not_bool(a))) || atoi(not_bool(not_bool(b))) ? "1" : "0";
 }
 
 static int is_redefined(const char *name, AST *let)
@@ -196,6 +235,47 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   eval_result = N_AST(CONST_NUM, strlen(result), result, NULL, NULL);
   free(result);
 
+  STR_CASE(">")
+  AST *a = eval_expr(SECOND(expr), funcs);
+  AST *b = eval_expr(THIRD(expr), funcs);
+  D_AST(SECOND(expr));
+  D_AST(THIRD(expr));
+  SECOND(expr) = a, THIRD(expr) = b;
+  eval_result = N_AST(CONST_NUM, 1, gt_num(a->value, b->value), NULL, NULL);
+  STR_CASE("<")
+  AST *a = eval_expr(SECOND(expr), funcs);
+  AST *b = eval_expr(THIRD(expr), funcs);
+  D_AST(SECOND(expr));
+  D_AST(THIRD(expr));
+  SECOND(expr) = a, THIRD(expr) = b;
+  eval_result = N_AST(CONST_NUM, 1, lt_num(a->value, b->value), NULL, NULL);
+  STR_CASE("==")
+  AST *a = eval_expr(SECOND(expr), funcs);
+  AST *b = eval_expr(THIRD(expr), funcs);
+  D_AST(SECOND(expr));
+  D_AST(THIRD(expr));
+  SECOND(expr) = a, THIRD(expr) = b;
+  eval_result = N_AST(CONST_NUM, 1, eq_num(a->value, b->value), NULL, NULL);
+  STR_CASE("and")
+  AST *a = eval_expr(SECOND(expr), funcs);
+  AST *b = eval_expr(THIRD(expr), funcs);
+  D_AST(SECOND(expr));
+  D_AST(THIRD(expr));
+  SECOND(expr) = a, THIRD(expr) = b;
+  eval_result = N_AST(CONST_NUM, 1, and_bool(a->value, b->value), NULL, NULL);
+  STR_CASE("or")
+  AST *a = eval_expr(SECOND(expr), funcs);
+  AST *b = eval_expr(THIRD(expr), funcs);
+  D_AST(SECOND(expr));
+  D_AST(THIRD(expr));
+  SECOND(expr) = a, THIRD(expr) = b;
+  eval_result = N_AST(CONST_NUM, 1, or_bool(a->value, b->value), NULL, NULL);
+  STR_CASE("not")
+  AST *a = eval_expr(SECOND(expr), funcs);
+  D_AST(SECOND(expr));
+  SECOND(expr) = a;
+  eval_result = N_AST(CONST_NUM, 1, not_bool(a->value), NULL, NULL);
+
   STR_CASE("car")
   eval_result = copy_AST(CAR(expr));
 
@@ -266,23 +346,29 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
     is_free = 1;
     var_list = CDR(var_list);
   }
-  eval_result = tmp == result ? copy_AST(result) : result;
+  eval_result = eval_expr(result, funcs);
+  if (result != THIRD(expr)) D_AST(result);
 
   STR_DEFAULT
   AST *fun = NULL;
   if (ht_get(funcs, GET_OP(expr), (void **)&fun))
   {
     AST *args = CDR(expr);
-    if (list_len(args) == list_len(SECOND(fun)))
+    AST *arg_names = SECOND(fun);
+    if (list_len(args) == list_len(arg_names))
     {
-      eval_result = CONS(N_AST(NAME, 3, "let", NULL, NULL), CONS(NULL, CONS(copy_AST(THIRD(fun)), NULL)));
+      eval_result = CONS(N_AST(NAME, 3, "let", NULL, NULL),
+                         CONS(NULL,
+                              CONS(copy_AST(THIRD(fun)),
+                                   NULL)));
       AST **dst = &SECOND(eval_result);
       while (args)
       {
-	*dst = CONS(CAR(args), NULL);
-	dst = &CDR(*dst);
-	CAR(args) = NULL;
+        *dst = CONS(CONS(copy_AST(CAR(arg_names)), CONS(CAR(args), NULL)), NULL);
+        dst = &CDR(*dst);
+        CAR(args) = NULL;
         args = CDR(args);
+	arg_names = CDR(arg_names);
       }
       AST *tmp = eval_result;
       eval_result = eval_expr(eval_result, funcs);

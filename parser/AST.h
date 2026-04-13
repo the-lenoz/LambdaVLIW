@@ -44,5 +44,6 @@ int list_len(AST *list);
 void D_AST(AST *node);
 
 void print_AST(AST *node, FILE *fp);
+void dump_AST(AST *node, FILE *fp);
 
 #endif // AST_D

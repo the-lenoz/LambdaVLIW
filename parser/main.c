@@ -22,6 +22,7 @@ int main(int argc, char **argv)
   AST *result = parse_stream(fp, close);
 
   print_AST(result, stdout);
+  dump_AST(result, stdout);
   
   D_AST(result);
   return 0;
