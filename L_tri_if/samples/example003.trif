@@ -1,0 +1,13 @@
+(
+(BB0
+  (let a (+ 2 2))
+  (goto BB1)
+)
+(BB1
+  (let b (+ a 6))
+  (goto BB2)
+)
+(BB2
+  (let result (+ b 1))
+)
+)

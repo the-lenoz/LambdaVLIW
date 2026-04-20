@@ -1,0 +1,7 @@
+(
+(BB0
+  (let a (+ 1 2))
+  (let b (* a 3))
+  (let result (- b 2))
+)
+)

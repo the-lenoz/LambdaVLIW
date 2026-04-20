@@ -1,0 +1,8 @@
+(
+(BB0
+  (let a (+ 20 1))
+  (let b (+ 1 2))
+  (let c (/ a b))
+  (let result (+ c 0))
+)
+)

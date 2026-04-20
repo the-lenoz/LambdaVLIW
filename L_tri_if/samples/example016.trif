@@ -1,0 +1,15 @@
+(
+(BB0
+  (let a (+ 1 2))
+  (let b (+ 2 2))
+  (let cond0 (== a b))
+  (if-goto cond0 BB1 else BB2)
+)
+(BB1
+  (let result (+ a 100))
+)
+(BB2
+  (let c (+ a b))
+  (let result (+ c 2))
+)
+)

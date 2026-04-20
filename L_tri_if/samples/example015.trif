@@ -1,0 +1,14 @@
+(
+(BB0
+  (let a (+ 2 3))
+  (goto BB1)
+)
+(BB1
+  (let b (+ a 1))
+  (goto BB2)
+)
+(BB2
+  (let c (phi (BB1 b)))
+  (let result (* c 2))
+)
+)

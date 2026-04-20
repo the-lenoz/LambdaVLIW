@@ -1,0 +1,23 @@
+(
+(BB0
+  (let a (+ 1 1))
+  (let b (+ a 1))
+  (let cond0 (> b a))
+  (if-goto cond0 BB1 else BB2)
+)
+(BB1
+  (let x (+ a b))
+  (let y (* b 2))
+  (goto BB3)
+)
+(BB2
+  (let x (+ a 10))
+  (let y (* b 10))
+  (goto BB3)
+)
+(BB3
+  (let p (phi (BB1 x) (BB2 x)))
+  (let q (phi (BB1 y) (BB2 y)))
+  (let result (+ p q))
+)
+)

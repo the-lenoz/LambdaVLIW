@@ -1,0 +1,11 @@
+(
+(BB0
+  (let a (+ 1 2))
+  (let b (+ 1 2))
+  (let c (== a b))
+  (let d (>= a b))
+  (let e (<= a b))
+  (let f (+ c d))
+  (let result (+ f e))
+)
+)

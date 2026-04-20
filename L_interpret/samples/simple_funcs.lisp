@@ -1,4 +1,4 @@
-(defun test () (123))
+(defun test () 123)
 
 
 (test)

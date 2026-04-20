@@ -1,0 +1,14 @@
+(
+(BB0
+  (let x (+ 2 3))
+  (let cond0 (> x 2))
+  (if-goto cond0 BB1 else BB2)
+)
+(BB1
+  (let y (+ x 3))
+  (let result (+ y 0))
+)
+(BB2
+  (let result (+ x 100))
+)
+)

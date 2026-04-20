@@ -145,7 +145,12 @@ static const char *or_bool(const char *a, const char *b)
 
 static int is_redefined(const char *name, AST *let)
 {
-  return 0; // add checking
+  for (AST *list = SECOND(let); list; list = CDR(list))
+  {
+    if (!strcmp(name, GET_OP(CAR(list))))
+      return 1;
+  }
+  return 0;
 }
 
 static int is_true(AST *value)
@@ -277,10 +282,10 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
   eval_result = N_AST(CONST_NUM, 1, not_bool(a->value), NULL, NULL);
 
   STR_CASE("car")
-  eval_result = copy_AST(CAR(expr));
+  eval_result = copy_AST(CAR((SECOND(expr))));
 
   STR_CASE("cdr")
-  eval_result = copy_AST(CDR(expr));
+  eval_result = copy_AST(CDR(SECOND(expr)));
 
   STR_CASE("cons")
   AST *a = eval_expr(SECOND(expr), funcs);
@@ -347,7 +352,8 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
     var_list = CDR(var_list);
   }
   eval_result = eval_expr(result, funcs);
-  if (result != THIRD(expr)) D_AST(result);
+  if (result != THIRD(expr))
+    D_AST(result);
 
   STR_DEFAULT
   AST *fun = NULL;
@@ -368,7 +374,7 @@ static AST *eval_func_call(AST *expr, HTable *funcs)
         dst = &CDR(*dst);
         CAR(args) = NULL;
         args = CDR(args);
-	arg_names = CDR(arg_names);
+        arg_names = CDR(arg_names);
       }
       AST *tmp = eval_result;
       eval_result = eval_expr(eval_result, funcs);
