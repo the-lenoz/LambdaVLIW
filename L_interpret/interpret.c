@@ -16,24 +16,6 @@
                   : (c) == '"'  ? '"'  \
                                 : ' ')
 
-#define GET_OP(x) (CAR(x)->value)
-
-#define DEFUN_GET_ID(x) (SECOND(x)->value)
-
-#define STR_MATCH(val)                      \
-  const char *_str_switch_internal = (val); \
-  if (0)                                    \
-  {
-#define STR_CASE(pattern)                          \
-  }                                                \
-  else if (!strcmp(pattern, _str_switch_internal)) \
-  {
-#define STR_DEFAULT \
-  }                 \
-  else              \
-  {
-#define STR_MATCH_END }
-
 typedef struct
 {
   int depth;

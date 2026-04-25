@@ -1,0 +1,38 @@
+(
+  (bb0
+    (let v0 9)
+    (let v1 4)
+    (let v2 2)
+    (let v3 3)
+    (let v4 10)
+    (let v5 2)
+    (let v6 3)
+    (let v10 (> v0 v1))
+    (if-goto v10 bb1 else bb2)
+  )
+  (bb1
+    (let v11 (- v0 v2))
+    (goto bb3)
+  )
+  (bb2
+    (let v12 (+ v1 v3))
+    (goto bb3)
+  )
+  (bb3
+    (let v13 (phi (bb1 v11) (bb2 v12)))
+    (let v14 (>= v13 v4))
+    (if-goto v14 bb4 else bb5)
+  )
+  (bb4
+    (let v16 (* v13 v5))
+    (goto bb6)
+  )
+  (bb5
+    (let v17 (/ v13 v6))
+    (goto bb6)
+  )
+  (bb6
+    (let v18 (phi (bb4 v16) (bb5 v17)))
+    (let result v18)
+  )
+)
