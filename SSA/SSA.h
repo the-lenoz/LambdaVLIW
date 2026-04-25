@@ -1,247 +1,120 @@
 #ifndef SSA_D
 #define SSA_D
-#include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
-typedef enum
-{
-  SSA_PASSTHROUGH,
-  SSA_ADD,
-  SSA_SUB,
-  SSA_MUL,
-  SSA_DIV,
-  SSA_LT,
-  SSA_GT,
-  SSA_LTE,
-  SSA_GTE,
-  SSA_EQ
-} SSA_operator;
+typedef unsigned int SSAValName;
+typedef unsigned int SSABasicBlockName;
+typedef unsigned int SSAFuncName;
+
+#define SSA_INVALID_VAL ((SSAValName)~0u)
+#define SSA_INVALID_BB ((SSABasicBlockName)~0u)
+#define SSA_INVALID_FUNC ((SSAFuncName)~0u)
+
+typedef struct _SSAModule SSAModule;
 
 typedef struct
 {
-  int BB_index;
-  int val_global_name;
+  SSABasicBlockName previous_block_name;
+  SSAValName value_name;
 } PhiPair;
 
-typedef struct
+typedef struct _PhiList
 {
-  int intems_count;
-  PhiPair *items;
+  PhiPair pair;
+  struct _PhiList *next;
 } PhiList;
 
-typedef struct
+typedef struct _ArgList
 {
-  int global_name;
-  int is_phi_node;
-
-  PhiList *phi_list;
-  SSA_operator op;
-  int arg0_global_name;
-  int arg1_global_name;
-  int arg2_global_name;
-
-} SSA_val;
+  SSAValName name;
+  struct _ArgList *next;
+} ArgList;
 
 typedef struct
 {
-  int condition_val_global_name;
-  int true_dst_BB_index;
-  int false_dst_BB_index;
-} SSA_if_goto;
+  SSAFuncName calee_name;
+  ArgList *args;
+} _FuncCall;
 
 typedef struct
 {
-  int dst_BB_index;
-} SSA_goto;
-
-typedef enum
-{
-  SSA_VAL,
-  SSA_IF_GOTO,
-  SSA_GOTO
-} SSA_stmt_type;
+  PhiList *options;
+} _PhiNode;
 
 typedef union
 {
-  SSA_val val;
-  SSA_if_goto if_goto;
-  SSA_goto go;
-} SSA_stmt_variant;
+  _PhiNode phi;
+  _FuncCall call;
+} _SSAExpr;
 
 typedef struct
 {
-  SSA_stmt_type type;
-  SSA_stmt_variant variant;
-} SSA_stmt;
+  int is_const; /*Ability of bijection between name and expression*/
+  _SSAExpr expr;
+  SSABasicBlockName parent_name;
+} SSAValue;
+
+typedef enum
+{
+  SSA_TERM_NONE,
+  SSA_TERM_GOTO,
+  SSA_TERM_COND_GOTO
+} BlockTerminatorType;
 
 typedef struct
 {
-  int statements_count;
-  SSA_stmt *statements;
-} SSA_BasicBlock;
+  BlockTerminatorType type;
+  SSAValName cond;
+  SSABasicBlockName true_dst;
+  SSABasicBlockName false_dst;
+} SSABlockTerminator;
 
 typedef struct
 {
-  int basic_blocks_count;
-  SSA_BasicBlock *basic_blocks;
-  int entry_BB_index;
-} SSA_Func;
+  SSAFuncName parent_name;
+  SSABlockTerminator terminator;
+} SSABasicBlock;
 
-int SSA_Func_init(SSA_Func *f);
-int SSA_Func_add_BB(SSA_Func *f, SSA_BasicBlock bb); /*returns index*/
-SSA_BasicBlock *SSA_Func_get_BB_ptr(SSA_Func *f, int index);
-int SSA_Func_destroy(SSA_Func *f);
-
-int SSA_BasicBlock_init(SSA_BasicBlock *bb);
-int SSA_BasicBlock_add_stmt(SSA_BasicBlock *bb, SSA_stmt stmt);
-SSA_stmt SSA_BasicBlock_get_stmt(SSA_BasicBlock *bb, int index);
-int SSA_BasicBlock_set_stmt(SSA_BasicBlock *bb, int index, SSA_stmt stmt);
-int SSA_BasicBlock_destroy(SSA_BasicBlock *bb);
-
-int SSA_stmt_init(SSA_stmt *stmt, int is_phi_node, PhiList *phi_list, SSA_operator op,
-                  int arg0_name, int arg1_name, int arg2_name);
-int SSA_stmt_destroy(SSA_stmt *stmt);
-
-int generate_L_tri_if(SSA_Func f, FILE *out_fp);
-
-#define SSA_RESULT_GLOBAL_NAME INT_MIN
-#define SSA_IMM(value) (-(int)((value) + 1))
-
-#define SSA_ARRAY_LEN(arr) ((int)(sizeof(arr) / sizeof((arr)[0])))
-#define SSA_BLOCK(name, ...) SSA_stmt name[] = {__VA_ARGS__}
-
-#define SSA_PHI_PAIR(bb_index, value_name) ((PhiPair){.BB_index = (bb_index), .val_global_name = (value_name)})
-
-#define SSA_STMT_VAL(dst_name, operator_name, arg0, arg1, arg2) \
-  ((SSA_stmt){                                                  \
-      .type = SSA_VAL,                                          \
-      .variant.val = {                                          \
-          .global_name = (dst_name),                            \
-          .is_phi_node = 0,                                     \
-          .phi_list = NULL,                                     \
-          .op = (operator_name),                                \
-          .arg0_global_name = (arg0),                           \
-          .arg1_global_name = (arg1),                           \
-          .arg2_global_name = (arg2),                           \
-      },                                                        \
-  })
-
-#define SSA_STMT_PHI(dst_name, phi_inputs) \
-  ((SSA_stmt){                             \
-      .type = SSA_VAL,                     \
-      .variant.val = {                     \
-          .global_name = (dst_name),       \
-          .is_phi_node = 1,                \
-          .phi_list = (phi_inputs),        \
-          .op = SSA_PASSTHROUGH,           \
-          .arg0_global_name = -1,          \
-          .arg1_global_name = -1,          \
-          .arg2_global_name = -1,          \
-      },                                   \
-  })
-
-#define SSA_STMT_MOV(dst_name, src_name) SSA_STMT_VAL((dst_name), SSA_PASSTHROUGH, (src_name), -1, -1)
-#define SSA_STMT_CONST(dst_name, imm_value) SSA_STMT_MOV((dst_name), SSA_IMM(imm_value))
-
-#define SSA_STMT_ADD(dst_name, lhs_name, rhs_name) SSA_STMT_VAL((dst_name), SSA_ADD, (lhs_name), (rhs_name), -1)
-#define SSA_STMT_SUB(dst_name, lhs_name, rhs_name) SSA_STMT_VAL((dst_name), SSA_SUB, (lhs_name), (rhs_name), -1)
-#define SSA_STMT_MUL(dst_name, lhs_name, rhs_name) SSA_STMT_VAL((dst_name), SSA_MUL, (lhs_name), (rhs_name), -1)
-#define SSA_STMT_DIV(dst_name, lhs_name, rhs_name) SSA_STMT_VAL((dst_name), SSA_DIV, (lhs_name), (rhs_name), -1)
-#define SSA_STMT_LT(dst_name, lhs_name, rhs_name) SSA_STMT_VAL((dst_name), SSA_LT, (lhs_name), (rhs_name), -1)
-#define SSA_STMT_GT(dst_name, lhs_name, rhs_name) SSA_STMT_VAL((dst_name), SSA_GT, (lhs_name), (rhs_name), -1)
-#define SSA_STMT_LTE(dst_name, lhs_name, rhs_name) SSA_STMT_VAL((dst_name), SSA_LTE, (lhs_name), (rhs_name), -1)
-#define SSA_STMT_GTE(dst_name, lhs_name, rhs_name) SSA_STMT_VAL((dst_name), SSA_GTE, (lhs_name), (rhs_name), -1)
-#define SSA_STMT_EQ(dst_name, lhs_name, rhs_name) SSA_STMT_VAL((dst_name), SSA_EQ, (lhs_name), (rhs_name), -1)
-
-#define SSA_STMT_IF(cond_name, true_bb, false_bb)   \
-  ((SSA_stmt){                                      \
-      .type = SSA_IF_GOTO,                          \
-      .variant.if_goto = {                          \
-          .condition_val_global_name = (cond_name), \
-          .true_dst_BB_index = (true_bb),           \
-          .false_dst_BB_index = (false_bb),         \
-      },                                            \
-  })
-
-#define SSA_STMT_GOTO(dst_bb)       \
-  ((SSA_stmt){                      \
-      .type = SSA_GOTO,             \
-      .variant.go = {               \
-          .dst_BB_index = (dst_bb), \
-      },                            \
-  })
-
-static inline PhiList *SSA_PhiList_new(const PhiPair *pairs, int count)
+typedef struct
 {
-  if (count < 0)
-    return NULL;
+  char *name;
 
-  PhiList *phi_list = malloc(sizeof(*phi_list));
-  if (!phi_list)
-    return NULL;
+  unsigned int values_count;
+  unsigned int values_cap;
+  SSAValue *values;
 
-  phi_list->intems_count = count;
-  phi_list->items = NULL;
+  unsigned int basic_blocks_count;
+  unsigned int basic_blocks_cap;
+  SSABasicBlock *basic_blocks;
 
-  if (!count)
-    return phi_list;
+  SSABasicBlockName entry_block;
+  SSABasicBlockName exit_block;
 
-  phi_list->items = malloc((size_t)count * sizeof(*phi_list->items));
-  if (!phi_list->items)
-  {
-    free(phi_list);
-    return NULL;
-  }
+  SSAModule *parent_module;
+} SSAFunc;
 
-  memcpy(phi_list->items, pairs, (size_t)count * sizeof(*phi_list->items));
-  return phi_list;
-}
-
-#define SSA_PHI_LIST_NEW(...) \
-  SSA_PhiList_new((PhiPair[]){__VA_ARGS__}, (int)(sizeof((PhiPair[]){__VA_ARGS__}) / sizeof(PhiPair)))
-
-static inline void SSA_PhiList_destroy(PhiList *phi_list)
+struct _SSAModule
 {
-  if (!phi_list)
-    return;
-  free(phi_list->items);
-  free(phi_list);
-}
+  unsigned int functions_count;
+  unsigned int functions_cap;
+  SSAFunc *functions;
+};
 
-static inline int SSA_Func_add_BB_from_array(SSA_Func *f, const SSA_stmt *stmts, int stmts_count)
-{
-  if (!f || !stmts || stmts_count < 0)
-    return -1;
+SSAModule *new_module();
+void destroy_module(SSAModule *module);
+SSAFuncName new_func(SSAModule *module, const char *name, int is_global /*maybe other properties*/);
+SSABasicBlockName new_BB(SSAModule *module, SSAFuncName func, int is_entry, int is_exit);
+SSAValName emit_phi_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, PhiList *phi_list);
+SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
+                            SSABasicBlockName BB, SSAFuncName callee, ArgList *arg_list, int is_constexpr);
 
-  SSA_BasicBlock bb;
-  if (SSA_BasicBlock_init(&bb) < 0)
-    return -1;
+int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName cond_name,
+                   SSABasicBlockName true_dst, SSABasicBlockName false_dst);
+int emit_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSABasicBlockName dst);
 
-  for (int i = 0; i < stmts_count; ++i)
-  {
-    if (SSA_BasicBlock_add_stmt(&bb, stmts[i]) < 0)
-    {
-      SSA_BasicBlock_destroy(&bb);
-      return -1;
-    }
-  }
+PhiList *new_PhiList(SSAModule *module, SSAFuncName func, SSABasicBlockName BB);
+ArgList *new_ArgList(SSAModule *module, SSAFuncName func, SSABasicBlockName BB);
 
-  int index = SSA_Func_add_BB(f, bb);
-  if (index < 0)
-  {
-    SSA_BasicBlock_destroy(&bb);
-    return -1;
-  }
-
-  return index;
-}
-
-static inline int SSA_Func_add_BB_expect(SSA_Func *f, int expected_index, const SSA_stmt *stmts, int stmts_count)
-{
-  int index = SSA_Func_add_BB_from_array(f, stmts, stmts_count);
-  return index == expected_index ? 0 : -1;
-}
+int PhiList_append(PhiList *list, PhiPair pair);
+int ArgList_append(ArgList *list, SSAValName arg_name);
 
 #endif
