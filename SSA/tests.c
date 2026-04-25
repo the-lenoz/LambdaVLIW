@@ -1,282 +1,224 @@
 #include "SSA.h"
 #include <stdio.h>
 
-typedef int (*ssa_builder_fn)(SSA_Func *f);
+#define TEST_ASSERT(cond)                                                            \
+  do                                                                                 \
+  {                                                                                  \
+    if (!(cond))                                                                     \
+    {                                                                                \
+      fprintf(stderr, "    assert failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
+      return -1;                                                                     \
+    }                                                                                \
+  } while (0)
 
-static void free_phi_lists_in_func(SSA_Func *f)
+static int test_simple_call_and_goto(void)
 {
-  if (!f)
-    return;
+  SSAModule *module;
+  SSAFuncName callee;
+  SSAFuncName caller;
+  SSABasicBlockName bb_entry;
+  SSABasicBlockName bb_exit;
+  ArgList *args;
+  SSAValName call_val;
+  SSAFunc *caller_fn;
 
-  for (int i = 0; i < f->basic_blocks_count; ++i)
-  {
-    SSA_BasicBlock *bb = &f->basic_blocks[i];
-    for (int j = 0; j < bb->statements_count; ++j)
-    {
-      SSA_stmt *stmt = &bb->statements[j];
-      if (stmt->type == SSA_VAL && stmt->variant.val.is_phi_node)
-      {
-        SSA_PhiList_destroy(stmt->variant.val.phi_list);
-        stmt->variant.val.phi_list = NULL;
-      }
-    }
-  }
-}
+  module = new_module();
+  TEST_ASSERT(module != NULL);
 
-static int cleanup_failed_build(SSA_Func *f, PhiList **phi_lists, int phi_lists_count)
-{
-  for (int i = 0; i < phi_lists_count; ++i)
-  {
-    SSA_PhiList_destroy(phi_lists[i]);
-    phi_lists[i] = NULL;
-  }
+  callee = new_func(module, "callee", 1);
+  TEST_ASSERT(callee != SSA_INVALID_FUNC);
 
-  SSA_Func_destroy(f);
-  return -1;
-}
+  caller = new_func(module, "main", 1);
+  TEST_ASSERT(caller != SSA_INVALID_FUNC);
 
-static int build_loop_accumulator(SSA_Func *f)
-{
-  PhiList *phi_i = NULL;
-  PhiList *phi_acc = NULL;
-  PhiList *phi_lists[2] = {NULL, NULL};
+  bb_entry = new_BB(module, caller, 1, 0);
+  bb_exit = new_BB(module, caller, 0, 1);
+  TEST_ASSERT(bb_entry != SSA_INVALID_BB);
+  TEST_ASSERT(bb_exit != SSA_INVALID_BB);
 
-  if (SSA_Func_init(f) < 0)
-    return -1;
+  caller_fn = &module->functions[caller];
+  TEST_ASSERT(caller_fn->entry_block == bb_entry);
+  TEST_ASSERT(caller_fn->exit_block == bb_exit);
 
-  phi_i = SSA_PHI_LIST_NEW(SSA_PHI_PAIR(0, 0), SSA_PHI_PAIR(2, 5));
-  phi_acc = SSA_PHI_LIST_NEW(SSA_PHI_PAIR(0, 1), SSA_PHI_PAIR(2, 6));
-  phi_lists[0] = phi_i;
-  phi_lists[1] = phi_acc;
+  args = new_ArgList(module, caller, bb_entry);
+  TEST_ASSERT(args != NULL);
 
-  if (!phi_i || !phi_acc)
-    return cleanup_failed_build(f, phi_lists, 2);
+  call_val = emit_call_assign(module, caller, bb_entry, callee, args, 1);
+  TEST_ASSERT(call_val != SSA_INVALID_VAL);
+  TEST_ASSERT(caller_fn->values_count == 1);
+  TEST_ASSERT(caller_fn->values[call_val].is_const == 1);
+  TEST_ASSERT(caller_fn->values[call_val].expr.call.calee_name == callee);
+  TEST_ASSERT(caller_fn->values[call_val].expr.call.args == args);
+  TEST_ASSERT(caller_fn->values[call_val].parent_name == bb_entry);
 
-  SSA_BLOCK(bb0,
-            SSA_STMT_CONST(0, 0),
-            SSA_STMT_CONST(1, 0),
-            SSA_STMT_GOTO(1));
+  TEST_ASSERT(emit_goto(module, caller, bb_entry, bb_exit) == 0);
+  TEST_ASSERT(caller_fn->basic_blocks[bb_entry].terminator.type == SSA_TERM_GOTO);
+  TEST_ASSERT(caller_fn->basic_blocks[bb_entry].terminator.cond == SSA_INVALID_VAL);
+  TEST_ASSERT(caller_fn->basic_blocks[bb_entry].terminator.true_dst == bb_exit);
+  TEST_ASSERT(caller_fn->basic_blocks[bb_entry].terminator.false_dst == SSA_INVALID_BB);
 
-  SSA_BLOCK(bb1,
-            SSA_STMT_PHI(2, phi_i),
-            SSA_STMT_PHI(3, phi_acc),
-            SSA_STMT_LT(4, 2, SSA_IMM(6)),
-            SSA_STMT_IF(4, 2, 3));
+  TEST_ASSERT(emit_goto(module, caller, bb_entry, bb_exit) < 0);
 
-  SSA_BLOCK(bb2,
-            SSA_STMT_ADD(5, 2, SSA_IMM(1)),
-            SSA_STMT_ADD(6, 3, 2),
-            SSA_STMT_GOTO(1));
-
-  SSA_BLOCK(bb3,
-            SSA_STMT_MOV(SSA_RESULT_GLOBAL_NAME, 3));
-
-  if (SSA_Func_add_BB_expect(f, 0, bb0, SSA_ARRAY_LEN(bb0)) < 0 ||
-      SSA_Func_add_BB_expect(f, 1, bb1, SSA_ARRAY_LEN(bb1)) < 0 ||
-      SSA_Func_add_BB_expect(f, 2, bb2, SSA_ARRAY_LEN(bb2)) < 0 ||
-      SSA_Func_add_BB_expect(f, 3, bb3, SSA_ARRAY_LEN(bb3)) < 0)
-    return cleanup_failed_build(f, phi_lists, 2);
-
+  destroy_module(module);
   return 0;
 }
 
-static int build_branch_chain(SSA_Func *f)
+static int test_branch_and_phi(void)
 {
-  PhiList *phi_merge = NULL;
-  PhiList *phi_out = NULL;
-  PhiList *phi_lists[2] = {NULL, NULL};
+  SSAModule *module;
+  SSAFuncName cond_fn;
+  SSAFuncName calc_fn;
+  SSAFuncName main_fn_name;
+  SSABasicBlockName bb_entry;
+  SSABasicBlockName bb_true;
+  SSABasicBlockName bb_false;
+  SSABasicBlockName bb_merge;
+  ArgList *args_cond;
+  ArgList *args_true;
+  ArgList *args_false;
+  PhiList *phi;
+  SSAValName cond_val;
+  SSAValName true_val;
+  SSAValName false_val;
+  SSAValName phi_val;
+  SSAFunc *main_fn;
 
-  if (SSA_Func_init(f) < 0)
-    return -1;
+  module = new_module();
+  TEST_ASSERT(module != NULL);
 
-  phi_merge = SSA_PHI_LIST_NEW(SSA_PHI_PAIR(1, 11), SSA_PHI_PAIR(2, 12));
-  phi_out = SSA_PHI_LIST_NEW(SSA_PHI_PAIR(4, 16), SSA_PHI_PAIR(5, 17));
-  phi_lists[0] = phi_merge;
-  phi_lists[1] = phi_out;
+  cond_fn = new_func(module, "cond_provider", 1);
+  calc_fn = new_func(module, "calc", 1);
+  main_fn_name = new_func(module, "branch_main", 1);
+  TEST_ASSERT(cond_fn != SSA_INVALID_FUNC);
+  TEST_ASSERT(calc_fn != SSA_INVALID_FUNC);
+  TEST_ASSERT(main_fn_name != SSA_INVALID_FUNC);
 
-  if (!phi_merge || !phi_out)
-    return cleanup_failed_build(f, phi_lists, 2);
+  bb_entry = new_BB(module, main_fn_name, 1, 0);
+  bb_true = new_BB(module, main_fn_name, 0, 0);
+  bb_false = new_BB(module, main_fn_name, 0, 0);
+  bb_merge = new_BB(module, main_fn_name, 0, 1);
+  TEST_ASSERT(bb_entry != SSA_INVALID_BB);
+  TEST_ASSERT(bb_true != SSA_INVALID_BB);
+  TEST_ASSERT(bb_false != SSA_INVALID_BB);
+  TEST_ASSERT(bb_merge != SSA_INVALID_BB);
 
-  SSA_BLOCK(bb0,
-            SSA_STMT_CONST(0, 9),
-            SSA_STMT_CONST(1, 4),
-            SSA_STMT_CONST(2, 2),
-            SSA_STMT_CONST(3, 3),
-            SSA_STMT_CONST(4, 10),
-            SSA_STMT_CONST(5, 2),
-            SSA_STMT_CONST(6, 3),
-            SSA_STMT_GT(10, 0, 1),
-            SSA_STMT_IF(10, 1, 2));
+  main_fn = &module->functions[main_fn_name];
 
-  SSA_BLOCK(bb1,
-            SSA_STMT_SUB(11, 0, 2),
-            SSA_STMT_GOTO(3));
+  args_cond = new_ArgList(module, main_fn_name, bb_entry);
+  TEST_ASSERT(args_cond != NULL);
+  cond_val = emit_call_assign(module, main_fn_name, bb_entry, cond_fn, args_cond, 0);
+  TEST_ASSERT(cond_val != SSA_INVALID_VAL);
 
-  SSA_BLOCK(bb2,
-            SSA_STMT_ADD(12, 1, 3),
-            SSA_STMT_GOTO(3));
+  TEST_ASSERT(emit_cond_goto(module, main_fn_name, bb_entry, cond_val, bb_true, bb_false) == 0);
+  TEST_ASSERT(main_fn->basic_blocks[bb_entry].terminator.type == SSA_TERM_COND_GOTO);
+  TEST_ASSERT(main_fn->basic_blocks[bb_entry].terminator.cond == cond_val);
+  TEST_ASSERT(main_fn->basic_blocks[bb_entry].terminator.true_dst == bb_true);
+  TEST_ASSERT(main_fn->basic_blocks[bb_entry].terminator.false_dst == bb_false);
 
-  SSA_BLOCK(bb3,
-            SSA_STMT_PHI(13, phi_merge),
-            SSA_STMT_GTE(14, 13, 4),
-            SSA_STMT_IF(14, 4, 5));
+  args_true = new_ArgList(module, main_fn_name, bb_true);
+  TEST_ASSERT(args_true != NULL);
+  TEST_ASSERT(ArgList_append(args_true, cond_val) == 0);
+  true_val = emit_call_assign(module, main_fn_name, bb_true, calc_fn, args_true, 0);
+  TEST_ASSERT(true_val != SSA_INVALID_VAL);
+  TEST_ASSERT(emit_goto(module, main_fn_name, bb_true, bb_merge) == 0);
 
-  SSA_BLOCK(bb4,
-            SSA_STMT_MUL(16, 13, 5),
-            SSA_STMT_GOTO(6));
+  args_false = new_ArgList(module, main_fn_name, bb_false);
+  TEST_ASSERT(args_false != NULL);
+  false_val = emit_call_assign(module, main_fn_name, bb_false, calc_fn, args_false, 0);
+  TEST_ASSERT(false_val != SSA_INVALID_VAL);
+  TEST_ASSERT(emit_goto(module, main_fn_name, bb_false, bb_merge) == 0);
 
-  SSA_BLOCK(bb5,
-            SSA_STMT_DIV(17, 13, 6),
-            SSA_STMT_GOTO(6));
+  phi = new_PhiList(module, main_fn_name, bb_merge);
+  TEST_ASSERT(phi != NULL);
+  TEST_ASSERT(PhiList_append(phi, (PhiPair){.previous_block_name = bb_true, .value_name = true_val}) == 0);
+  TEST_ASSERT(PhiList_append(phi, (PhiPair){.previous_block_name = bb_false, .value_name = false_val}) == 0);
 
-  SSA_BLOCK(bb6,
-            SSA_STMT_PHI(18, phi_out),
-            SSA_STMT_MOV(SSA_RESULT_GLOBAL_NAME, 18));
+  phi_val = emit_phi_assign(module, main_fn_name, bb_merge, phi);
+  TEST_ASSERT(phi_val != SSA_INVALID_VAL);
+  TEST_ASSERT(main_fn->values[phi_val].expr.phi.options == phi);
+  TEST_ASSERT(main_fn->values[phi_val].parent_name == bb_merge);
 
-  if (SSA_Func_add_BB_expect(f, 0, bb0, SSA_ARRAY_LEN(bb0)) < 0 ||
-      SSA_Func_add_BB_expect(f, 1, bb1, SSA_ARRAY_LEN(bb1)) < 0 ||
-      SSA_Func_add_BB_expect(f, 2, bb2, SSA_ARRAY_LEN(bb2)) < 0 ||
-      SSA_Func_add_BB_expect(f, 3, bb3, SSA_ARRAY_LEN(bb3)) < 0 ||
-      SSA_Func_add_BB_expect(f, 4, bb4, SSA_ARRAY_LEN(bb4)) < 0 ||
-      SSA_Func_add_BB_expect(f, 5, bb5, SSA_ARRAY_LEN(bb5)) < 0 ||
-      SSA_Func_add_BB_expect(f, 6, bb6, SSA_ARRAY_LEN(bb6)) < 0)
-    return cleanup_failed_build(f, phi_lists, 2);
+  TEST_ASSERT(emit_cond_goto(module, main_fn_name, bb_entry, cond_val, bb_true, bb_false) < 0);
+  TEST_ASSERT(emit_goto(module, main_fn_name, bb_true, bb_merge) < 0);
 
+  destroy_module(module);
   return 0;
 }
 
-static int build_loop_with_post_check(SSA_Func *f)
+static int test_invalid_inputs(void)
 {
-  PhiList *phi_x = NULL;
-  PhiList *phi_y = NULL;
-  PhiList *phi_res = NULL;
-  PhiList *phi_lists[3] = {NULL, NULL, NULL};
+  SSAModule *module;
+  SSAFuncName fn;
+  SSABasicBlockName bb_entry;
+  SSABasicBlockName bb_exit;
+  ArgList *args;
+  SSAValName cond;
 
-  if (SSA_Func_init(f) < 0)
-    return -1;
+  module = new_module();
+  TEST_ASSERT(module != NULL);
 
-  phi_x = SSA_PHI_LIST_NEW(SSA_PHI_PAIR(0, 8), SSA_PHI_PAIR(3, 14));
-  phi_y = SSA_PHI_LIST_NEW(SSA_PHI_PAIR(0, 9), SSA_PHI_PAIR(3, 15));
-  phi_res = SSA_PHI_LIST_NEW(SSA_PHI_PAIR(5, 19), SSA_PHI_PAIR(6, 20));
-  phi_lists[0] = phi_x;
-  phi_lists[1] = phi_y;
-  phi_lists[2] = phi_res;
+  fn = new_func(module, "invalid_case", 0);
+  TEST_ASSERT(fn != SSA_INVALID_FUNC);
 
-  if (!phi_x || !phi_y || !phi_res)
-    return cleanup_failed_build(f, phi_lists, 3);
+  bb_entry = new_BB(module, fn, 1, 0);
+  bb_exit = new_BB(module, fn, 0, 1);
+  TEST_ASSERT(bb_entry != SSA_INVALID_BB);
+  TEST_ASSERT(bb_exit != SSA_INVALID_BB);
+  TEST_ASSERT(new_BB(module, fn, 1, 0) == SSA_INVALID_BB);
+  TEST_ASSERT(new_BB(module, fn, 0, 1) == SSA_INVALID_BB);
 
-  SSA_BLOCK(bb0,
-            SSA_STMT_CONST(8, 1),
-            SSA_STMT_CONST(9, 2),
-            SSA_STMT_CONST(0, 5),
-            SSA_STMT_CONST(1, 1),
-            SSA_STMT_CONST(2, 2),
-            SSA_STMT_CONST(3, 42),
-            SSA_STMT_CONST(4, 2),
-            SSA_STMT_CONST(5, 3),
-            SSA_STMT_GOTO(1));
+  args = new_ArgList(module, fn, bb_entry);
+  TEST_ASSERT(args != NULL);
 
-  SSA_BLOCK(bb1,
-            SSA_STMT_PHI(10, phi_x),
-            SSA_STMT_PHI(11, phi_y),
-            SSA_STMT_LT(12, 10, 0),
-            SSA_STMT_IF(12, 2, 4));
+  TEST_ASSERT(emit_call_assign(module, fn, bb_entry, SSA_INVALID_FUNC, args, 0) == SSA_INVALID_VAL);
+  TEST_ASSERT(emit_cond_goto(module, fn, bb_entry, SSA_INVALID_VAL, bb_entry, bb_exit) < 0);
 
-  SSA_BLOCK(bb2,
-            SSA_STMT_ADD(13, 11, 10),
-            SSA_STMT_ADD(14, 10, 1),
-            SSA_STMT_GOTO(3));
+  cond = emit_call_assign(module, fn, bb_entry, fn, args, 0);
+  TEST_ASSERT(cond != SSA_INVALID_VAL);
+  TEST_ASSERT(emit_cond_goto(module, fn, bb_entry, cond, SSA_INVALID_BB, bb_exit) < 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, bb_entry, cond, bb_entry, bb_exit) == 0);
+  TEST_ASSERT(emit_goto(module, fn, bb_entry, bb_exit) < 0);
 
-  SSA_BLOCK(bb3,
-            SSA_STMT_MUL(15, 13, 2),
-            SSA_STMT_GOTO(1));
-
-  SSA_BLOCK(bb4,
-            SSA_STMT_EQ(16, 11, 3),
-            SSA_STMT_IF(16, 5, 6));
-
-  SSA_BLOCK(bb5,
-            SSA_STMT_DIV(19, 11, 4),
-            SSA_STMT_GOTO(7));
-
-  SSA_BLOCK(bb6,
-            SSA_STMT_SUB(20, 11, 5),
-            SSA_STMT_GOTO(7));
-
-  SSA_BLOCK(bb7,
-            SSA_STMT_PHI(21, phi_res),
-            SSA_STMT_MOV(SSA_RESULT_GLOBAL_NAME, 21));
-
-  if (SSA_Func_add_BB_expect(f, 0, bb0, SSA_ARRAY_LEN(bb0)) < 0 ||
-      SSA_Func_add_BB_expect(f, 1, bb1, SSA_ARRAY_LEN(bb1)) < 0 ||
-      SSA_Func_add_BB_expect(f, 2, bb2, SSA_ARRAY_LEN(bb2)) < 0 ||
-      SSA_Func_add_BB_expect(f, 3, bb3, SSA_ARRAY_LEN(bb3)) < 0 ||
-      SSA_Func_add_BB_expect(f, 4, bb4, SSA_ARRAY_LEN(bb4)) < 0 ||
-      SSA_Func_add_BB_expect(f, 5, bb5, SSA_ARRAY_LEN(bb5)) < 0 ||
-      SSA_Func_add_BB_expect(f, 6, bb6, SSA_ARRAY_LEN(bb6)) < 0 ||
-      SSA_Func_add_BB_expect(f, 7, bb7, SSA_ARRAY_LEN(bb7)) < 0)
-    return cleanup_failed_build(f, phi_lists, 3);
-
+  destroy_module(module);
   return 0;
 }
 
-static FILE *open_samples_file(const char *filename, char *resolved_path, size_t resolved_path_size)
+typedef int (*test_fn)(void);
+
+typedef struct
 {
-  const char *roots[] = {"../samples", "samples"};
-
-  for (size_t i = 0; i < sizeof(roots) / sizeof(roots[0]); ++i)
-  {
-    if (snprintf(resolved_path, resolved_path_size, "%s/%s", roots[i], filename) >= (int)resolved_path_size)
-      continue;
-
-    FILE *fp = fopen(resolved_path, "w");
-    if (fp)
-      return fp;
-  }
-
-  return NULL;
-}
-
-static int build_and_dump(const char *filename, ssa_builder_fn builder)
-{
-  SSA_Func f;
-  char path[256];
-  FILE *out_fp;
-
-  if (builder(&f) < 0)
-    return fprintf(stderr, "Failed to build SSA function for '%s'\n", filename), -1;
-
-  out_fp = open_samples_file(filename, path, sizeof(path));
-  if (!out_fp)
-  {
-    free_phi_lists_in_func(&f);
-    SSA_Func_destroy(&f);
-    return fprintf(stderr, "Failed to open output file for '%s'\n", filename), -1;
-  }
-
-  if (generate_L_tri_if(f, out_fp) < 0)
-  {
-    fclose(out_fp);
-    free_phi_lists_in_func(&f);
-    SSA_Func_destroy(&f);
-    return fprintf(stderr, "Failed to dump '%s'\n", filename), -1;
-  }
-
-  fclose(out_fp);
-  printf("Wrote %s\n", path);
-
-  free_phi_lists_in_func(&f);
-  SSA_Func_destroy(&f);
-  return 0;
-}
+  const char *name;
+  test_fn fn;
+} TestCase;
 
 int main(void)
 {
-  int status = 0;
+  const TestCase tests[] = {
+      {"simple_call_and_goto", test_simple_call_and_goto},
+      {"branch_and_phi", test_branch_and_phi},
+      {"invalid_inputs", test_invalid_inputs},
+  };
+  int failed = 0;
+  size_t i;
 
-  status |= build_and_dump("ssa_loop_accumulator.trif", build_loop_accumulator);
-  status |= build_and_dump("ssa_branch_chain.trif", build_branch_chain);
-  status |= build_and_dump("ssa_loop_with_post_check.trif", build_loop_with_post_check);
+  for (i = 0; i < sizeof(tests) / sizeof(tests[0]); ++i)
+  {
+    int rc;
+    printf("[RUN ] %s\n", tests[i].name);
+    rc = tests[i].fn();
+    if (rc == 0)
+      printf("[PASS] %s\n", tests[i].name);
+    else
+    {
+      printf("[FAIL] %s\n", tests[i].name);
+      failed += 1;
+    }
+  }
 
-  return status ? 1 : 0;
+  printf("\nTotal: %zu, passed: %zu, failed: %d\n",
+         sizeof(tests) / sizeof(tests[0]),
+         (sizeof(tests) / sizeof(tests[0])) - (size_t)failed,
+         failed);
+
+  return failed == 0 ? 0 : 1;
 }

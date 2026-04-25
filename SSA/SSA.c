@@ -1,290 +1,468 @@
 #include "SSA.h"
-#include <assert.h>
 #include <limits.h>
-#include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
-static void *realloc_array(void *ptr, size_t count, size_t elem_size)
-{
-  if (elem_size != 0 && count > SIZE_MAX / elem_size)
-    return NULL;
-  return realloc(ptr, count * elem_size);
-}
+#define BASIC_ARRAY_SIZE 64
 
-static const char *ssa_op_to_string(SSA_operator op)
+typedef enum
 {
-  switch (op)
-  {
-  case SSA_ADD:
-    return "+";
-  case SSA_SUB:
-    return "-";
-  case SSA_MUL:
-    return "*";
-  case SSA_DIV:
-    return "/";
-  case SSA_LT:
-    return "<";
-  case SSA_GT:
-    return ">";
-  case SSA_LTE:
-    return "<=";
-  case SSA_GTE:
-    return ">=";
-  case SSA_EQ:
-    return "==";
-  default:
-    return NULL;
-  }
-}
+  OWNED_LIST_PHI,
+  OWNED_LIST_ARG
+} OwnedListKind;
 
-static int print_dest_name(FILE *out_fp, int global_name)
+typedef struct _OwnedList
 {
-  if (global_name == SSA_RESULT_GLOBAL_NAME)
-    return fprintf(out_fp, "result") < 0 ? -1 : 0;
-  if (global_name < 0)
-    return -1;
-  return fprintf(out_fp, "v%d", global_name) < 0 ? -1 : 0;
-}
+  SSAModule *owner;
+  void *list;
+  OwnedListKind kind;
+  struct _OwnedList *next;
+} OwnedList;
 
-static int print_operand_name(FILE *out_fp, int operand)
-{
-  if (operand == SSA_RESULT_GLOBAL_NAME)
-    return fprintf(out_fp, "result") < 0 ? -1 : 0;
-  if (operand < 0)
-  {
-    long long imm = -(long long)operand - 1;
-    return fprintf(out_fp, "%lld", imm) < 0 ? -1 : 0;
-  }
-  return fprintf(out_fp, "v%d", operand) < 0 ? -1 : 0;
-}
+static OwnedList *owned_lists = NULL;
 
-static int print_bb_label(FILE *out_fp, int bb_index)
+static int ensure_array_capacity(void **arr, unsigned int *cap, size_t elem_size, unsigned int min_elems)
 {
-  return fprintf(out_fp, "bb%d", bb_index) < 0 ? -1 : 0;
-}
+  unsigned int new_cap;
+  void *new_arr;
 
-static int emit_basic_block(FILE *out_fp, const SSA_BasicBlock *bb, int bb_index)
-{
-  if (fprintf(out_fp, "  (") < 0 || print_bb_label(out_fp, bb_index) < 0 || fprintf(out_fp, "\n") < 0)
+  if (!arr || !cap || elem_size == 0)
     return -1;
 
-  for (int i = 0; i < bb->statements_count; ++i)
+  if (*cap >= min_elems)
+    return 0;
+
+  new_cap = (*cap == 0) ? BASIC_ARRAY_SIZE : *cap;
+  while (new_cap < min_elems)
   {
-    const SSA_stmt *stmt = &bb->statements[i];
-
-    switch (stmt->type)
-    {
-    case SSA_VAL:
-    {
-      const SSA_val *val = &stmt->variant.val;
-
-      if (fprintf(out_fp, "    (let ") < 0 || print_dest_name(out_fp, val->global_name) < 0 || fprintf(out_fp, " ") < 0)
-        return -1;
-
-      if (val->is_phi_node)
-      {
-        if (!val->phi_list)
-          return -1;
-
-        if (fprintf(out_fp, "(phi") < 0)
-          return -1;
-        for (int j = 0; j < val->phi_list->intems_count; ++j)
-        {
-          PhiPair pair = val->phi_list->items[j];
-          if (fprintf(out_fp, " (") < 0 || print_bb_label(out_fp, pair.BB_index) < 0 || fprintf(out_fp, " ") < 0 ||
-              print_operand_name(out_fp, pair.val_global_name) < 0 || fprintf(out_fp, ")") < 0)
-            return -1;
-        }
-        if (fprintf(out_fp, "))\n") < 0)
-          return -1;
-      }
-      else if (val->op == SSA_PASSTHROUGH)
-      {
-        if (print_operand_name(out_fp, val->arg0_global_name) < 0 || fprintf(out_fp, ")\n") < 0)
-          return -1;
-      }
-      else
-      {
-        const char *op = ssa_op_to_string(val->op);
-        if (!op)
-          return -1;
-        if (fprintf(out_fp, "(%s ", op) < 0 || print_operand_name(out_fp, val->arg0_global_name) < 0 ||
-            fprintf(out_fp, " ") < 0 || print_operand_name(out_fp, val->arg1_global_name) < 0 ||
-            fprintf(out_fp, "))\n") < 0)
-          return -1;
-      }
-      break;
-    }
-    case SSA_IF_GOTO:
-    {
-      const SSA_if_goto *if_goto = &stmt->variant.if_goto;
-      if (fprintf(out_fp, "    (if-goto ") < 0 || print_operand_name(out_fp, if_goto->condition_val_global_name) < 0 ||
-          fprintf(out_fp, " ") < 0 || print_bb_label(out_fp, if_goto->true_dst_BB_index) < 0 ||
-          fprintf(out_fp, " else ") < 0 || print_bb_label(out_fp, if_goto->false_dst_BB_index) < 0 ||
-          fprintf(out_fp, ")\n") < 0)
-        return -1;
-      break;
-    }
-    case SSA_GOTO:
-      if (fprintf(out_fp, "    (goto ") < 0 || print_bb_label(out_fp, stmt->variant.go.dst_BB_index) < 0 ||
-          fprintf(out_fp, ")\n") < 0)
-        return -1;
-      break;
-    default:
+    if (new_cap > UINT_MAX / 2)
       return -1;
-    }
+    new_cap *= 2;
   }
 
-  return fprintf(out_fp, "  )\n") < 0 ? -1 : 0;
-}
+  if ((size_t)new_cap > (size_t)-1 / elem_size)
+    return -1;
 
-int SSA_Func_init(SSA_Func *f)
-{
-  assert(f);
-  f->basic_blocks_count = 0;
-  f->basic_blocks = NULL;
-  f->entry_BB_index = -1;
+  new_arr = realloc(*arr, (size_t)new_cap * elem_size);
+  if (!new_arr)
+    return -1;
+
+  if (new_cap > *cap)
+    memset((char *)new_arr + (size_t)(*cap) * elem_size, 0, (size_t)(new_cap - *cap) * elem_size);
+
+  *arr = new_arr;
+  *cap = new_cap;
   return 0;
 }
-int SSA_Func_add_BB(SSA_Func *f, SSA_BasicBlock bb) /*returns index*/
+
+static SSAFunc *get_func(SSAModule *module, SSAFuncName func)
 {
-  assert(f);
-
-  if (f->basic_blocks_count == INT_MAX)
-    return -1;
-
-  int index = f->basic_blocks_count;
-  SSA_BasicBlock *new_blocks = realloc_array(f->basic_blocks, (size_t)f->basic_blocks_count + 1, sizeof(*new_blocks));
-  if (!new_blocks)
-    return -1;
-
-  f->basic_blocks = new_blocks;
-  f->basic_blocks[index] = bb;
-  f->basic_blocks_count++;
-
-  if (f->entry_BB_index < 0)
-    f->entry_BB_index = index;
-
-  return index;
-}
-SSA_BasicBlock *SSA_Func_get_BB_ptr(SSA_Func *f, int index)
-{
-  if (!f || index < 0 || index >= f->basic_blocks_count)
+  if (!module || func >= module->functions_count)
     return NULL;
-  return &f->basic_blocks[index];
-}
-int SSA_Func_destroy(SSA_Func *f)
-{
-  if (!f)
-    return -1;
 
-  for (int i = 0; i < f->basic_blocks_count; ++i)
-    SSA_BasicBlock_destroy(&f->basic_blocks[i]);
-
-  free(f->basic_blocks);
-  *f = (SSA_Func){};
-  return 0;
+  return &module->functions[func];
 }
 
-int SSA_BasicBlock_init(SSA_BasicBlock *bb)
+static int is_valid_bb(const SSAFunc *func, SSABasicBlockName bb)
 {
-  if (!bb)
-    return -1;
-
-  bb->statements_count = 0;
-  bb->statements = NULL;
-  return 0;
-}
-int SSA_BasicBlock_add_stmt(SSA_BasicBlock *bb, SSA_stmt stmt)
-{
-  if (!bb)
-    return -1;
-  if (bb->statements_count == INT_MAX)
-    return -1;
-
-  int index = bb->statements_count;
-  SSA_stmt *new_stmts = realloc_array(bb->statements, (size_t)bb->statements_count + 1, sizeof(*new_stmts));
-  if (!new_stmts)
-    return -1;
-
-  bb->statements = new_stmts;
-  bb->statements[index] = stmt;
-  bb->statements_count++;
-  return index;
-}
-SSA_stmt SSA_BasicBlock_get_stmt(SSA_BasicBlock *bb, int index)
-{
-  if (!bb || index < 0 || index >= bb->statements_count)
-    return (SSA_stmt){};
-  return bb->statements[index];
-}
-int SSA_BasicBlock_set_stmt(SSA_BasicBlock *bb, int index, SSA_stmt stmt)
-{
-  if (!bb || index < 0 || index >= bb->statements_count)
-    return -1;
-  bb->statements[index] = stmt;
-  return 0;
-}
-int SSA_BasicBlock_destroy(SSA_BasicBlock *bb)
-{
-  if (!bb)
-    return -1;
-
-  for (int i = 0; i < bb->statements_count; ++i)
-    SSA_stmt_destroy(&bb->statements[i]);
-
-  free(bb->statements);
-  *bb = (SSA_BasicBlock){};
-  return 0;
+  return func && bb < func->basic_blocks_count;
 }
 
-int SSA_stmt_init(SSA_stmt *stmt, int is_phi_node, PhiList *phi_list, SSA_operator op,
-                  int arg0_name, int arg1_name, int arg2_name)
+static int is_valid_value(const SSAFunc *func, SSAValName value)
 {
-  if (!stmt)
-    return -1;
-
-  stmt->type = SSA_VAL;
-  stmt->variant.val = (SSA_val){
-      .global_name = -1,
-      .is_phi_node = is_phi_node ? 1 : 0,
-      .phi_list = phi_list,
-      .op = op,
-      .arg0_global_name = arg0_name,
-      .arg1_global_name = arg1_name,
-      .arg2_global_name = arg2_name,
-  };
-
-  return 0;
-}
-int SSA_stmt_destroy(SSA_stmt *stmt)
-{
-  if (!stmt)
-    return -1;
-  *stmt = (SSA_stmt){};
-  return 0;
+  return func && value < func->values_count;
 }
 
-int generate_L_tri_if(SSA_Func f, FILE *out_fp)
+static int bb_has_terminator(const SSAFunc *func, SSABasicBlockName bb)
 {
-  if (!out_fp)
-    return -1;
+  return is_valid_bb(func, bb) && func->basic_blocks[bb].terminator.type != SSA_TERM_NONE;
+}
 
-  if (fprintf(out_fp, "(\n") < 0)
-    return -1;
-
-  if (f.entry_BB_index >= 0 && f.entry_BB_index < f.basic_blocks_count)
-    if (emit_basic_block(out_fp, &f.basic_blocks[f.entry_BB_index], f.entry_BB_index) < 0)
-      return -1;
-
-  for (int i = 0; i < f.basic_blocks_count; ++i)
+static void destroy_phi_list(PhiList *list)
+{
+  while (list)
   {
-    if (i == f.entry_BB_index)
+    PhiList *next = list->next;
+    free(list);
+    list = next;
+  }
+}
+
+static void destroy_arg_list(ArgList *list)
+{
+  while (list)
+  {
+    ArgList *next = list->next;
+    free(list);
+    list = next;
+  }
+}
+
+static int register_owned_list(SSAModule *module, void *list, OwnedListKind kind)
+{
+  OwnedList *node;
+
+  if (!module || !list)
+    return -1;
+
+  node = (OwnedList *)malloc(sizeof(OwnedList));
+  if (!node)
+    return -1;
+
+  node->owner = module;
+  node->list = list;
+  node->kind = kind;
+  node->next = owned_lists;
+  owned_lists = node;
+
+  return 0;
+}
+
+static void destroy_owned_lists_for_module(SSAModule *module)
+{
+  OwnedList **slot = &owned_lists;
+
+  while (*slot)
+  {
+    OwnedList *current = *slot;
+    if (current->owner != module)
+    {
+      slot = &current->next;
       continue;
-    if (emit_basic_block(out_fp, &f.basic_blocks[i], i) < 0)
-      return -1;
+    }
+
+    if (current->kind == OWNED_LIST_PHI)
+      destroy_phi_list((PhiList *)current->list);
+    else
+      destroy_arg_list((ArgList *)current->list);
+
+    *slot = current->next;
+    free(current);
+  }
+}
+
+static void destroy_func(SSAFunc *func)
+{
+  if (!func)
+    return;
+
+  free(func->name);
+  free(func->values);
+  free(func->basic_blocks);
+  *func = (SSAFunc){};
+}
+
+static SSAValName append_value(SSAFunc *function, SSAValue value)
+{
+  if (!function)
+    return SSA_INVALID_VAL;
+
+  if (ensure_array_capacity((void **)&function->values, &function->values_cap, sizeof(SSAValue), function->values_count + 1) < 0)
+    return SSA_INVALID_VAL;
+
+  function->values[function->values_count] = value;
+  function->values_count += 1;
+  return function->values_count - 1;
+}
+
+SSAModule *new_module()
+{
+  SSAModule *module = (SSAModule *)calloc(1, sizeof(SSAModule));
+
+  if (!module)
+    return NULL;
+
+  module->functions_cap = BASIC_ARRAY_SIZE;
+  module->functions = (SSAFunc *)calloc(module->functions_cap, sizeof(SSAFunc));
+  if (!module->functions)
+  {
+    free(module);
+    return NULL;
   }
 
-  return fprintf(out_fp, ")\n") < 0 ? -1 : 0;
+  return module;
+}
+
+void destroy_module(SSAModule *module)
+{
+  unsigned int i;
+
+  if (!module)
+    return;
+
+  for (i = 0; i < module->functions_count; ++i)
+    destroy_func(&module->functions[i]);
+
+  destroy_owned_lists_for_module(module);
+
+  free(module->functions);
+  *module = (SSAModule){};
+  free(module);
+}
+
+SSAFuncName new_func(SSAModule *module, const char *name, int is_global /*maybe other properties*/)
+{
+  SSAFunc *func;
+
+  (void)is_global;
+
+  if (!module || !name)
+    return SSA_INVALID_FUNC;
+
+  if (ensure_array_capacity((void **)&module->functions, &module->functions_cap, sizeof(SSAFunc), module->functions_count + 1) < 0)
+    return SSA_INVALID_FUNC;
+
+  func = &module->functions[module->functions_count];
+  *func = (SSAFunc){};
+
+  func->name = (char *)malloc(strlen(name) + 1);
+  if (!func->name)
+    return SSA_INVALID_FUNC;
+
+  strcpy(func->name, name);
+
+  func->values_cap = BASIC_ARRAY_SIZE;
+  func->values = (SSAValue *)calloc(func->values_cap, sizeof(SSAValue));
+  if (!func->values)
+  {
+    free(func->name);
+    *func = (SSAFunc){};
+    return SSA_INVALID_FUNC;
+  }
+
+  func->basic_blocks_cap = BASIC_ARRAY_SIZE;
+  func->basic_blocks = (SSABasicBlock *)calloc(func->basic_blocks_cap, sizeof(SSABasicBlock));
+  if (!func->basic_blocks)
+  {
+    free(func->values);
+    free(func->name);
+    *func = (SSAFunc){};
+    return SSA_INVALID_FUNC;
+  }
+
+  func->entry_block = SSA_INVALID_BB;
+  func->exit_block = SSA_INVALID_BB;
+  func->parent_module = module;
+
+  module->functions_count += 1;
+  return module->functions_count - 1;
+}
+
+SSABasicBlockName new_BB(SSAModule *module, SSAFuncName func, int is_entry, int is_exit)
+{
+  SSAFunc *function = get_func(module, func);
+  SSABasicBlockName bb_name;
+
+  if (!function)
+    return SSA_INVALID_BB;
+
+  if (is_entry && function->entry_block != SSA_INVALID_BB)
+    return SSA_INVALID_BB;
+  if (is_exit && function->exit_block != SSA_INVALID_BB)
+    return SSA_INVALID_BB;
+
+  if (ensure_array_capacity((void **)&function->basic_blocks, &function->basic_blocks_cap, sizeof(SSABasicBlock), function->basic_blocks_count + 1) < 0)
+    return SSA_INVALID_BB;
+
+  bb_name = function->basic_blocks_count;
+  function->basic_blocks[bb_name] = (SSABasicBlock){
+      .parent_name = func,
+      .terminator = {
+          .type = SSA_TERM_NONE,
+          .cond = SSA_INVALID_VAL,
+          .true_dst = SSA_INVALID_BB,
+          .false_dst = SSA_INVALID_BB,
+      }};
+  function->basic_blocks_count += 1;
+
+  if (is_entry)
+    function->entry_block = bb_name;
+  if (is_exit)
+    function->exit_block = bb_name;
+
+  return bb_name;
+}
+
+SSAValName emit_phi_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, PhiList *phi_list)
+{
+  SSAFunc *function = get_func(module, func);
+  SSAValue value;
+
+  if (!function || !is_valid_bb(function, BB) || !phi_list)
+    return SSA_INVALID_VAL;
+
+  value = (SSAValue){};
+  value.is_const = 0;
+  value.expr.phi.options = phi_list;
+  value.parent_name = BB;
+
+  return append_value(function, value);
+}
+
+SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
+                            SSABasicBlockName BB, SSAFuncName callee, ArgList *arg_list, int is_constexpr)
+{
+  SSAFunc *function = get_func(module, func);
+  SSAValue value;
+
+  if (!function || !is_valid_bb(function, BB) || !arg_list)
+    return SSA_INVALID_VAL;
+  if (!get_func(module, callee))
+    return SSA_INVALID_VAL;
+
+  value = (SSAValue){};
+  value.is_const = !!is_constexpr;
+  value.expr.call.calee_name = callee;
+  value.expr.call.args = arg_list;
+  value.parent_name = BB;
+
+  return append_value(function, value);
+}
+
+int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName cond_name,
+                   SSABasicBlockName true_dst, SSABasicBlockName false_dst)
+{
+  SSAFunc *function = get_func(module, func);
+  SSABlockTerminator *terminator;
+
+  if (!function)
+    return -1;
+  if (!is_valid_bb(function, BB) || !is_valid_bb(function, true_dst) || !is_valid_bb(function, false_dst))
+    return -1;
+  if (!is_valid_value(function, cond_name))
+    return -1;
+  if (bb_has_terminator(function, BB))
+    return -1;
+
+  terminator = &function->basic_blocks[BB].terminator;
+  terminator->type = SSA_TERM_COND_GOTO;
+  terminator->cond = cond_name;
+  terminator->true_dst = true_dst;
+  terminator->false_dst = false_dst;
+
+  return 0;
+}
+
+int emit_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSABasicBlockName dst)
+{
+  SSAFunc *function = get_func(module, func);
+  SSABlockTerminator *terminator;
+
+  if (!function)
+    return -1;
+  if (!is_valid_bb(function, BB) || !is_valid_bb(function, dst))
+    return -1;
+  if (bb_has_terminator(function, BB))
+    return -1;
+
+  terminator = &function->basic_blocks[BB].terminator;
+  terminator->type = SSA_TERM_GOTO;
+  terminator->cond = SSA_INVALID_VAL;
+  terminator->true_dst = dst;
+  terminator->false_dst = SSA_INVALID_BB;
+
+  return 0;
+}
+
+PhiList *new_PhiList(SSAModule *module, SSAFuncName func, SSABasicBlockName BB)
+{
+  SSAFunc *function = get_func(module, func);
+  PhiList *list;
+
+  (void)BB;
+
+  if (!function)
+    return NULL;
+
+  list = (PhiList *)calloc(1, sizeof(PhiList));
+  if (!list)
+    return NULL;
+
+  list->pair.previous_block_name = SSA_INVALID_BB;
+  list->pair.value_name = SSA_INVALID_VAL;
+
+  if (register_owned_list(module, list, OWNED_LIST_PHI) < 0)
+  {
+    free(list);
+    return NULL;
+  }
+
+  return list;
+}
+
+ArgList *new_ArgList(SSAModule *module, SSAFuncName func, SSABasicBlockName BB)
+{
+  SSAFunc *function = get_func(module, func);
+  ArgList *list;
+
+  (void)BB;
+
+  if (!function)
+    return NULL;
+
+  list = (ArgList *)calloc(1, sizeof(ArgList));
+  if (!list)
+    return NULL;
+
+  list->name = SSA_INVALID_VAL;
+
+  if (register_owned_list(module, list, OWNED_LIST_ARG) < 0)
+  {
+    free(list);
+    return NULL;
+  }
+
+  return list;
+}
+
+int PhiList_append(PhiList *list, PhiPair pair)
+{
+  PhiList *cur;
+
+  if (!list)
+    return -1;
+
+  if (list->pair.previous_block_name == SSA_INVALID_BB &&
+      list->pair.value_name == SSA_INVALID_VAL &&
+      list->next == NULL)
+  {
+    list->pair = pair;
+    return 0;
+  }
+
+  cur = list;
+  while (cur->next)
+    cur = cur->next;
+
+  cur->next = (PhiList *)calloc(1, sizeof(PhiList));
+  if (!cur->next)
+    return -1;
+
+  cur->next->pair = pair;
+  return 0;
+}
+
+int ArgList_append(ArgList *list, SSAValName arg_name)
+{
+  ArgList *cur;
+
+  if (!list)
+    return -1;
+
+  if (list->name == SSA_INVALID_VAL && list->next == NULL)
+  {
+    list->name = arg_name;
+    return 0;
+  }
+
+  cur = list;
+  while (cur->next)
+    cur = cur->next;
+
+  cur->next = (ArgList *)calloc(1, sizeof(ArgList));
+  if (!cur->next)
+    return -1;
+
+  cur->next->name = arg_name;
+  return 0;
 }
