@@ -1,4 +1,6 @@
 #include "SSA.h"
+#include "SSA_dump_L_tri_if.h"
+#include "SSA_dump_graphviz.h"
 #include <stdio.h>
 
 #define TEST_ASSERT(cond)                                                            \
@@ -11,7 +13,47 @@
     }                                                                                \
   } while (0)
 
-static int test_simple_call_and_goto(void)
+static FILE *open_dump_file(const char *case_name, const char *ext, char *resolved_path, size_t path_cap)
+{
+  const char *roots[] = {"samples", "SSA/samples"};
+
+  for (size_t i = 0; i < sizeof(roots) / sizeof(roots[0]); ++i)
+  {
+    if (snprintf(resolved_path, path_cap, "%s/%s.%s", roots[i], case_name, ext) >= (int)path_cap)
+      continue;
+
+    FILE *fp = fopen(resolved_path, "w");
+    if (fp)
+      return fp;
+  }
+
+  return NULL;
+}
+
+static int dump_test_case(const char *case_name, const SSAModule *module)
+{
+  char path[256];
+  FILE *fp = open_dump_file(case_name, "trif", path, sizeof(path));
+
+  if (!fp)
+    return -1;
+  if (SSA_dump_module_L_tri_if(module, fp) < 0)
+    return fclose(fp), -1;
+  fclose(fp);
+  printf("  dump: %s\n", path);
+
+  fp = open_dump_file(case_name, "dot", path, sizeof(path));
+  if (!fp)
+    return -1;
+  if (SSA_dump_module_graphviz(module, fp) < 0)
+    return fclose(fp), -1;
+  fclose(fp);
+  printf("  dump: %s\n", path);
+
+  return 0;
+}
+
+static int test_simple_call_and_return(void)
 {
   SSAModule *module;
   SSAFuncName callee;
@@ -54,10 +96,22 @@ static int test_simple_call_and_goto(void)
   TEST_ASSERT(emit_goto(module, caller, bb_entry, bb_exit) == 0);
   TEST_ASSERT(caller_fn->basic_blocks[bb_entry].terminator.type == SSA_TERM_GOTO);
   TEST_ASSERT(caller_fn->basic_blocks[bb_entry].terminator.cond == SSA_INVALID_VAL);
+  TEST_ASSERT(caller_fn->basic_blocks[bb_entry].terminator.ret_val == SSA_INVALID_VAL);
   TEST_ASSERT(caller_fn->basic_blocks[bb_entry].terminator.true_dst == bb_exit);
   TEST_ASSERT(caller_fn->basic_blocks[bb_entry].terminator.false_dst == SSA_INVALID_BB);
 
   TEST_ASSERT(emit_goto(module, caller, bb_entry, bb_exit) < 0);
+
+  TEST_ASSERT(emit_return(module, caller, bb_exit, call_val) == 0);
+  TEST_ASSERT(caller_fn->basic_blocks[bb_exit].terminator.type == SSA_TERM_RETURN);
+  TEST_ASSERT(caller_fn->basic_blocks[bb_exit].terminator.cond == SSA_INVALID_VAL);
+  TEST_ASSERT(caller_fn->basic_blocks[bb_exit].terminator.ret_val == call_val);
+  TEST_ASSERT(caller_fn->basic_blocks[bb_exit].terminator.true_dst == SSA_INVALID_BB);
+  TEST_ASSERT(caller_fn->basic_blocks[bb_exit].terminator.false_dst == SSA_INVALID_BB);
+
+  TEST_ASSERT(emit_return(module, caller, bb_exit, call_val) < 0);
+
+  TEST_ASSERT(dump_test_case("simple_call_and_return", module) == 0);
 
   destroy_module(module);
   return 0;
@@ -138,8 +192,18 @@ static int test_branch_and_phi(void)
   TEST_ASSERT(main_fn->values[phi_val].expr.phi.options == phi);
   TEST_ASSERT(main_fn->values[phi_val].parent_name == bb_merge);
 
+  TEST_ASSERT(emit_return(module, main_fn_name, bb_merge, phi_val) == 0);
+  TEST_ASSERT(main_fn->basic_blocks[bb_merge].terminator.type == SSA_TERM_RETURN);
+  TEST_ASSERT(main_fn->basic_blocks[bb_merge].terminator.ret_val == phi_val);
+  TEST_ASSERT(main_fn->basic_blocks[bb_merge].terminator.cond == SSA_INVALID_VAL);
+  TEST_ASSERT(main_fn->basic_blocks[bb_merge].terminator.true_dst == SSA_INVALID_BB);
+  TEST_ASSERT(main_fn->basic_blocks[bb_merge].terminator.false_dst == SSA_INVALID_BB);
+
   TEST_ASSERT(emit_cond_goto(module, main_fn_name, bb_entry, cond_val, bb_true, bb_false) < 0);
   TEST_ASSERT(emit_goto(module, main_fn_name, bb_true, bb_merge) < 0);
+  TEST_ASSERT(emit_return(module, main_fn_name, bb_merge, phi_val) < 0);
+
+  TEST_ASSERT(dump_test_case("branch_and_phi", module) == 0);
 
   destroy_module(module);
   return 0;
@@ -153,6 +217,7 @@ static int test_invalid_inputs(void)
   SSABasicBlockName bb_exit;
   ArgList *args;
   SSAValName cond;
+  SSAValName retv;
 
   module = new_module();
   TEST_ASSERT(module != NULL);
@@ -175,9 +240,21 @@ static int test_invalid_inputs(void)
 
   cond = emit_call_assign(module, fn, bb_entry, fn, args, 0);
   TEST_ASSERT(cond != SSA_INVALID_VAL);
+  retv = emit_call_assign(module, fn, bb_exit, fn, args, 0);
+  TEST_ASSERT(retv != SSA_INVALID_VAL);
+
+  TEST_ASSERT(emit_return(module, fn, bb_entry, cond) < 0);
+  TEST_ASSERT(emit_return(module, fn, bb_exit, SSA_INVALID_VAL) < 0);
+  TEST_ASSERT(emit_return(module, fn, bb_exit, retv) == 0);
+  TEST_ASSERT(emit_return(module, fn, bb_exit, retv) < 0);
+  TEST_ASSERT(emit_goto(module, fn, bb_exit, bb_entry) < 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, bb_exit, cond, bb_entry, bb_exit) < 0);
+
   TEST_ASSERT(emit_cond_goto(module, fn, bb_entry, cond, SSA_INVALID_BB, bb_exit) < 0);
   TEST_ASSERT(emit_cond_goto(module, fn, bb_entry, cond, bb_entry, bb_exit) == 0);
   TEST_ASSERT(emit_goto(module, fn, bb_entry, bb_exit) < 0);
+
+  TEST_ASSERT(dump_test_case("invalid_inputs", module) == 0);
 
   destroy_module(module);
   return 0;
@@ -194,7 +271,7 @@ typedef struct
 int main(void)
 {
   const TestCase tests[] = {
-      {"simple_call_and_goto", test_simple_call_and_goto},
+      {"simple_call_and_return", test_simple_call_and_return},
       {"branch_and_phi", test_branch_and_phi},
       {"invalid_inputs", test_invalid_inputs},
   };

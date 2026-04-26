@@ -157,7 +157,8 @@ static SSAValName append_value(SSAFunc *function, SSAValue value)
   if (!function)
     return SSA_INVALID_VAL;
 
-  if (ensure_array_capacity((void **)&function->values, &function->values_cap, sizeof(SSAValue), function->values_count + 1) < 0)
+  if (ensure_array_capacity((void **)&function->values, &function->values_cap,
+                            sizeof(SSAValue), function->values_count + 1) < 0)
     return SSA_INVALID_VAL;
 
   function->values[function->values_count] = value;
@@ -209,7 +210,8 @@ SSAFuncName new_func(SSAModule *module, const char *name, int is_global /*maybe 
   if (!module || !name)
     return SSA_INVALID_FUNC;
 
-  if (ensure_array_capacity((void **)&module->functions, &module->functions_cap, sizeof(SSAFunc), module->functions_count + 1) < 0)
+  if (ensure_array_capacity((void **)&module->functions, &module->functions_cap,
+                            sizeof(SSAFunc), module->functions_count + 1) < 0)
     return SSA_INVALID_FUNC;
 
   func = &module->functions[module->functions_count];
@@ -261,19 +263,21 @@ SSABasicBlockName new_BB(SSAModule *module, SSAFuncName func, int is_entry, int 
   if (is_exit && function->exit_block != SSA_INVALID_BB)
     return SSA_INVALID_BB;
 
-  if (ensure_array_capacity((void **)&function->basic_blocks, &function->basic_blocks_cap, sizeof(SSABasicBlock), function->basic_blocks_count + 1) < 0)
+  if (ensure_array_capacity((void **)&function->basic_blocks, &function->basic_blocks_cap,
+                            sizeof(SSABasicBlock), function->basic_blocks_count + 1) < 0)
     return SSA_INVALID_BB;
 
   bb_name = function->basic_blocks_count;
   function->basic_blocks[bb_name] = (SSABasicBlock){
-      .parent_name = func,
-      .terminator = {
+      func,
+      {
           .type = SSA_TERM_NONE,
           .cond = SSA_INVALID_VAL,
+          .ret_val = SSA_INVALID_VAL,
           .true_dst = SSA_INVALID_BB,
           .false_dst = SSA_INVALID_BB,
       }};
-  function->basic_blocks_count += 1;
+  function->basic_blocks_count++;
 
   if (is_entry)
     function->entry_block = bb_name;
@@ -292,6 +296,7 @@ SSAValName emit_phi_assign(SSAModule *module, SSAFuncName func, SSABasicBlockNam
     return SSA_INVALID_VAL;
 
   value = (SSAValue){};
+  value.type = SSA_VALUE_PHI;
   value.is_const = 0;
   value.expr.phi.options = phi_list;
   value.parent_name = BB;
@@ -311,6 +316,7 @@ SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
     return SSA_INVALID_VAL;
 
   value = (SSAValue){};
+  value.type = SSA_VALUE_CALL;
   value.is_const = !!is_constexpr;
   value.expr.call.calee_name = callee;
   value.expr.call.args = arg_list;
@@ -323,7 +329,6 @@ int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SS
                    SSABasicBlockName true_dst, SSABasicBlockName false_dst)
 {
   SSAFunc *function = get_func(module, func);
-  SSABlockTerminator *terminator;
 
   if (!function)
     return -1;
@@ -334,11 +339,12 @@ int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SS
   if (bb_has_terminator(function, BB))
     return -1;
 
-  terminator = &function->basic_blocks[BB].terminator;
-  terminator->type = SSA_TERM_COND_GOTO;
-  terminator->cond = cond_name;
-  terminator->true_dst = true_dst;
-  terminator->false_dst = false_dst;
+  function->basic_blocks[BB].terminator = (SSABlockTerminator){
+      SSA_TERM_COND_GOTO,
+      cond_name,
+      SSA_INVALID_VAL,
+      true_dst,
+      false_dst};
 
   return 0;
 }
@@ -346,7 +352,6 @@ int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SS
 int emit_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSABasicBlockName dst)
 {
   SSAFunc *function = get_func(module, func);
-  SSABlockTerminator *terminator;
 
   if (!function)
     return -1;
@@ -355,12 +360,37 @@ int emit_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSABasi
   if (bb_has_terminator(function, BB))
     return -1;
 
-  terminator = &function->basic_blocks[BB].terminator;
-  terminator->type = SSA_TERM_GOTO;
-  terminator->cond = SSA_INVALID_VAL;
-  terminator->true_dst = dst;
-  terminator->false_dst = SSA_INVALID_BB;
+  function->basic_blocks[BB].terminator = (SSABlockTerminator){
+      SSA_TERM_GOTO,
+      SSA_INVALID_VAL,
+      SSA_INVALID_VAL,
+      dst,
+      SSA_INVALID_BB};
 
+  return 0;
+}
+
+int emit_return(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName ret_name)
+{
+  SSAFunc *function = get_func(module, func);
+
+  if (!function)
+    return -1;
+  if (!is_valid_bb(function, BB))
+    return -1;
+  if (function->exit_block == SSA_INVALID_BB || BB != function->exit_block)
+    return -1;
+  if (!is_valid_value(function, ret_name))
+    return -1;
+  if (bb_has_terminator(function, BB))
+    return -1;
+
+  function->basic_blocks[BB].terminator = (SSABlockTerminator){
+      SSA_TERM_RETURN,
+      SSA_INVALID_VAL,
+      ret_name,
+      SSA_INVALID_BB,
+      SSA_INVALID_BB};
   return 0;
 }
 

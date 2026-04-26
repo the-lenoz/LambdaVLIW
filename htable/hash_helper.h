@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static size_t hash(const void *k)
+static size_t str_hash(const void *k)
 {
   const unsigned char *str = (const unsigned char *)k;
   size_t hash = 5381;
@@ -26,7 +26,7 @@ static int str_eq(const void *a, const void *b)
 }
 
 static void free_str(HTable *ht, void *k, void *v) { free(k); }
-static void *k_dup(const void *k) { return strdup((const char *)k); }
-static void *v_dup(const void *v) { return (void *)(size_t)v; }
+static void *str_k_dup(const void *k) { return k ? strcpy(calloc(strlen(k) + 1, sizeof(char)), k) : NULL;}
+static void *int_v_dup(const void *v) { return (void *)(size_t)v; }
 
 #endif // HASH_HELPER_D

@@ -1,6 +1,6 @@
 #include "interpret.h"
 #include "../htable/htable.h"
-#include "hash_helper.h"
+#include "../htable/hash_helper.h"
 #include "itoa.h"
 #include <assert.h>
 #include <stdio.h>

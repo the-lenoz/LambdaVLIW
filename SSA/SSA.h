@@ -46,8 +46,16 @@ typedef union
   _FuncCall call;
 } _SSAExpr;
 
+typedef enum
+{
+  SSA_VALUE_INVALID = 0,
+  SSA_VALUE_PHI,
+  SSA_VALUE_CALL,
+} SSAValueType;
+
 typedef struct
 {
+  SSAValueType type;
   int is_const; /*Ability of bijection between name and expression*/
   _SSAExpr expr;
   SSABasicBlockName parent_name;
@@ -57,13 +65,15 @@ typedef enum
 {
   SSA_TERM_NONE,
   SSA_TERM_GOTO,
-  SSA_TERM_COND_GOTO
+  SSA_TERM_COND_GOTO,
+  SSA_TERM_RETURN
 } BlockTerminatorType;
 
 typedef struct
 {
   BlockTerminatorType type;
   SSAValName cond;
+  SSAValName ret_val;
   SSABasicBlockName true_dst;
   SSABasicBlockName false_dst;
 } SSABlockTerminator;
@@ -110,6 +120,7 @@ SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
 int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName cond_name,
                    SSABasicBlockName true_dst, SSABasicBlockName false_dst);
 int emit_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSABasicBlockName dst);
+int emit_return(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName ret_name);
 
 PhiList *new_PhiList(SSAModule *module, SSAFuncName func, SSABasicBlockName BB);
 ArgList *new_ArgList(SSAModule *module, SSAFuncName func, SSABasicBlockName BB);
