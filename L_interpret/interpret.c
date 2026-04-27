@@ -413,7 +413,7 @@ static int interpret_stmt(AST *stmt, HTable *funcs)
 
 int interpret_program(AST *program, AST *arg_data)
 {
-  HTable *functions = ht_init(hash, str_eq, k_dup, v_dup, free_str, 0);
+  HTable *functions = ht_init(str_hash, str_eq, str_k_dup, int_v_dup, free_str, 0);
   err = (err_t){OK, NULL};
   int status = 0;
   for (AST *block = program->lchild; block && err.kind == OK && status != -1; block = block->rchild)

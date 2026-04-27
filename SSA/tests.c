@@ -1,6 +1,7 @@
 #include "SSA.h"
-#include "SSA_dump_L_tri_if.h"
 #include "SSA_dump_graphviz.h"
+#include "SSA_to_L_tri_call.h"
+#include <limits.h>
 #include <stdio.h>
 
 #define TEST_ASSERT(cond)                                                            \
@@ -37,7 +38,7 @@ static int dump_test_case(const char *case_name, const SSAModule *module)
 
   if (!fp)
     return -1;
-  if (SSA_dump_module_L_tri_if(module, fp) < 0)
+  if (SSA_to_L_tri_call_module(module, fp) < 0)
     return fclose(fp), -1;
   fclose(fp);
   printf("  dump: %s\n", path);
@@ -260,6 +261,87 @@ static int test_invalid_inputs(void)
   return 0;
 }
 
+static int test_const_assign(void)
+{
+  SSAModule *module;
+  SSAFuncName fn;
+  SSABasicBlockName bb_entry;
+  SSABasicBlockName bb_exit;
+  SSAValName v0;
+  SSAValName v1;
+  SSAValName v2;
+  SSAFunc *f;
+
+  module = new_module();
+  TEST_ASSERT(module != NULL);
+
+  fn = new_func(module, "const_main", 1);
+  TEST_ASSERT(fn != SSA_INVALID_FUNC);
+
+  bb_entry = new_BB(module, fn, 1, 0);
+  bb_exit = new_BB(module, fn, 0, 1);
+  TEST_ASSERT(bb_entry != SSA_INVALID_BB);
+  TEST_ASSERT(bb_exit != SSA_INVALID_BB);
+
+  f = &module->functions[fn];
+
+  v0 = emit_const_assign(module, fn, bb_entry, 42);
+  v1 = emit_const_assign(module, fn, bb_entry, INT_MAX);
+  v2 = emit_const_assign(module, fn, bb_exit, INT_MIN);
+  TEST_ASSERT(v0 != SSA_INVALID_VAL);
+  TEST_ASSERT(v1 != SSA_INVALID_VAL);
+  TEST_ASSERT(v2 != SSA_INVALID_VAL);
+
+  TEST_ASSERT(f->values_count == 3);
+  TEST_ASSERT(f->values[v0].type == SSA_VALUE_CONST);
+  TEST_ASSERT(f->values[v1].type == SSA_VALUE_CONST);
+  TEST_ASSERT(f->values[v2].type == SSA_VALUE_CONST);
+  TEST_ASSERT(f->values[v0].is_const == 1);
+  TEST_ASSERT(f->values[v1].is_const == 1);
+  TEST_ASSERT(f->values[v2].is_const == 1);
+  TEST_ASSERT(f->values[v0].expr.cnst.value == 42);
+  TEST_ASSERT(f->values[v1].expr.cnst.value == INT_MAX);
+  TEST_ASSERT(f->values[v2].expr.cnst.value == INT_MIN);
+  TEST_ASSERT(f->values[v0].parent_name == bb_entry);
+  TEST_ASSERT(f->values[v2].parent_name == bb_exit);
+
+  TEST_ASSERT(emit_const_assign(module, fn, SSA_INVALID_BB, 7) == SSA_INVALID_VAL);
+  TEST_ASSERT(emit_goto(module, fn, bb_entry, bb_exit) == 0);
+  TEST_ASSERT(emit_return(module, fn, bb_exit, v2) == 0);
+
+  TEST_ASSERT(dump_test_case("const_assign", module) == 0);
+
+  destroy_module(module);
+  return 0;
+}
+
+static int test_void_value(void)
+{
+  SSAModule *module;
+  SSAFuncName fn;
+  SSABasicBlockName bb_entry;
+  SSABasicBlockName bb_exit;
+
+  module = new_module();
+  TEST_ASSERT(module != NULL);
+
+  fn = new_func(module, "void_main", 1);
+  TEST_ASSERT(fn != SSA_INVALID_FUNC);
+
+  bb_entry = new_BB(module, fn, 1, 0);
+  bb_exit = new_BB(module, fn, 0, 1);
+  TEST_ASSERT(bb_entry != SSA_INVALID_BB);
+  TEST_ASSERT(bb_exit != SSA_INVALID_BB);
+
+  TEST_ASSERT(emit_goto(module, fn, bb_entry, bb_exit) == 0);
+  TEST_ASSERT(emit_return(module, fn, bb_exit, SSA_VAL_VOID) == 0);
+
+  TEST_ASSERT(dump_test_case("void_value", module) == 0);
+
+  destroy_module(module);
+  return 0;
+}
+
 typedef int (*test_fn)(void);
 
 typedef struct
@@ -274,6 +356,8 @@ int main(void)
       {"simple_call_and_return", test_simple_call_and_return},
       {"branch_and_phi", test_branch_and_phi},
       {"invalid_inputs", test_invalid_inputs},
+      {"const_assign", test_const_assign},
+      {"void_value", test_void_value},
   };
   int failed = 0;
   size_t i;

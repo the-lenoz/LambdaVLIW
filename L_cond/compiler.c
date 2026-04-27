@@ -1,4 +1,7 @@
 #include "../SSA/SSA.h"
+#include "../SSA/SSA_dump_graphviz.h"
+#include "../SSA/SSA_to_L_tri_call.h"
+#include "../htable/hash_helper.h"
 #include "../htable/htable.h"
 #include "../parser/parser.h"
 #include <stdint.h>
@@ -29,9 +32,25 @@ static int is_constexpr(const char *func)
 
 SSAValName compile_expr(AST *expr, HTable *vars, HTable *funcs, SSAModule *module, SSAFuncName fn, SSABasicBlockName *active_BB)
 {
-  if (expr->type != SEXP)
-    return fprintf(stderr, "Fatal: invalid program structure.\n"), -1;
+  if (!expr)
+    return SSA_INVALID_VAL;
+  if (expr->type == CONST_NUM)
+  {
+    SSAValName const_val_name = emit_const_assign(module, fn, *active_BB, atoi(expr->value));
+    return const_val_name;
+  }
+  else if (expr->type == NAME)
+  {
+    SSAValName val_name;
+    if (!ht_get(vars, expr->value, (void **)&val_name))
+      return fprintf(stderr, "Fatal: usage of undevined variable '%s'.\n", expr->value), SSA_INVALID_VAL;
 
+    return val_name;
+  }
+  else if (expr->type == CONST_STR)
+    return fprintf(stderr, "Fatal: invalid program structure.\n"), SSA_INVALID_VAL;
+
+  // else SEXP
   STR_MATCH(GET_OP(expr))
   STR_CASE("let")
   for (AST *decl_list = SECOND(expr); decl_list; decl_list = CDR(decl_list))
@@ -63,7 +82,7 @@ SSAValName compile_expr(AST *expr, HTable *vars, HTable *funcs, SSAModule *modul
     *active_BB = next_BB;
   }
   emit_goto(module, fn, *active_BB, result_BB);
-  PhiList_append(result_list, (PhiPair){*active_BB, SSA_INVALID_VAL}); /*No true case in cond*/
+  PhiList_append(result_list, (PhiPair){*active_BB, SSA_VAL_VOID}); /*If there's no true case in cond*/
   *active_BB = result_BB;
   return emit_phi_assign(module, fn, *active_BB, result_list);
 
@@ -83,17 +102,40 @@ SSAValName compile_expr(AST *expr, HTable *vars, HTable *funcs, SSAModule *modul
   STR_MATCH_END
 }
 
-int compile_program(AST *program, FILE *out_fp)
+SSAModule *build_program(AST *program)
 {
-  if (!program || !out_fp)
-    return fprintf(stderr, "Fatal: no program or file_ptr.\n"), -1;
+  if (!program)
+    return fprintf(stderr, "Fatal: no program.\n"), NULL;
 
-  int var_name_c = 0;
+  HTable *vars, *funcs;
+  vars = ht_init(str_hash, str_eq, str_k_dup, int_v_dup, free_str, 0);
+  funcs = ht_init(str_hash, str_eq, str_k_dup, int_v_dup, free_str, 0);
 
-  putc('(', out_fp);
+  SSAModule *module = new_module();
 
-  putc(')', out_fp);
-  return 0;
+#define DECLARE_FUNC_STUB(name) ht_set(funcs, name, (void *)(size_t)new_func(module, name, 0))
+  DECLARE_FUNC_STUB("+");
+  DECLARE_FUNC_STUB("-");
+  DECLARE_FUNC_STUB("*");
+  DECLARE_FUNC_STUB("/");
+  DECLARE_FUNC_STUB(">");
+  DECLARE_FUNC_STUB("<");
+  DECLARE_FUNC_STUB("=");
+#undef DECLARE_FUNC_STUB
+
+  SSAFuncName fn = new_func(module, "main", 1);
+  SSABasicBlockName entry_block, exit_block, active_block;
+  entry_block = new_BB(module, fn, 1, 0);
+  exit_block = new_BB(module, fn, 0, 1);
+  active_block = entry_block;
+  SSAValName result = compile_expr(CAR(CAR(program)), vars, funcs, module, fn, &active_block);
+  emit_goto(module, fn, active_block, exit_block);
+  emit_return(module, fn, exit_block, result);
+
+  ht_destroy(vars);
+  ht_destroy(funcs);
+
+  return module;
 }
 
 int compile_file(const char *path, const char *out_path)
@@ -104,17 +146,22 @@ int compile_file(const char *path, const char *out_path)
 
   AST *program = parse_stream(fp, 1); // close inside
 
+  SSAModule *module = build_program(program);
+  D_AST(program);
+
   fp = fopen(out_path, "w");
   if (!fp)
     return fprintf(stderr, "Fatal: can't open file '%s'\n", out_path), -1;
 
-  int status = compile_program(program, fp);
-
+  SSA_to_L_tri_call_module(module, fp);
+#ifndef NDEBUG
+  FILE *dump_fp = fopen("/tmp/dump.dot", "w");
+  SSA_dump_func_graphviz(module, 0, dump_fp);
+  fclose(dump_fp);
+#endif
   fclose(fp);
-  D_AST(program);
 
-  if (status != 0)
-    return status;
+  destroy_module(module);
 
   return 0;
 }

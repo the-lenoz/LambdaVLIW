@@ -6,6 +6,7 @@ typedef unsigned int SSABasicBlockName;
 typedef unsigned int SSAFuncName;
 
 #define SSA_INVALID_VAL ((SSAValName)~0u)
+#define SSA_VAL_VOID ((SSAValName)~1u)
 #define SSA_INVALID_BB ((SSABasicBlockName)~0u)
 #define SSA_INVALID_FUNC ((SSAFuncName)~0u)
 
@@ -37,6 +38,11 @@ typedef struct
 
 typedef struct
 {
+  int value;
+} _ConstNode;
+
+typedef struct
+{
   PhiList *options;
 } _PhiNode;
 
@@ -44,6 +50,7 @@ typedef union
 {
   _PhiNode phi;
   _FuncCall call;
+  _ConstNode cnst;
 } _SSAExpr;
 
 typedef enum
@@ -51,6 +58,7 @@ typedef enum
   SSA_VALUE_INVALID = 0,
   SSA_VALUE_PHI,
   SSA_VALUE_CALL,
+  SSA_VALUE_CONST,
 } SSAValueType;
 
 typedef struct
@@ -116,6 +124,7 @@ SSABasicBlockName new_BB(SSAModule *module, SSAFuncName func, int is_entry, int 
 SSAValName emit_phi_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, PhiList *phi_list);
 SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
                             SSABasicBlockName BB, SSAFuncName callee, ArgList *arg_list, int is_constexpr);
+SSAValName emit_const_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, int value);
 
 int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName cond_name,
                    SSABasicBlockName true_dst, SSABasicBlockName false_dst);

@@ -57,6 +57,7 @@ static void *k_dup(const void *k)
   memcpy(copy, src, n + 1);
   return copy;
 }
+
 static void *ptr_dup(const void *v) { return (void *)v; }
 
 static void *int_dup(const void *v)
@@ -125,7 +126,7 @@ static int eval_binary_op(const char *op, int32_t lhs, int32_t rhs, int32_t *val
     *value = lhs > rhs;
   else if (!strcmp(op, "<"))
     *value = lhs < rhs;
-  else if (!strcmp(op, "=="))
+  else if (!strcmp(op, "==") || !strcmp(op, "="))
     *value = lhs == rhs;
   else if (!strcmp(op, ">="))
     *value = lhs >= rhs;
@@ -139,10 +140,12 @@ static int eval_binary_op(const char *op, int32_t lhs, int32_t rhs, int32_t *val
 
 static int eval_binary(AST *expr, HTable *vars, int32_t *value)
 {
+  int32_t lhs;
+  int32_t rhs;
+
   if (!expr || expr->type != SEXP || list_len(expr) != 3 || !is_name(FIRST(expr)))
     return fprintf(stderr, "Fatal: malformed expression\n"), -1;
 
-  int32_t lhs, rhs;
   if (eval_expr(SECOND(expr), vars, &lhs) < 0 || eval_expr(THIRD(expr), vars, &rhs) < 0)
     return -1;
 
@@ -163,8 +166,8 @@ static int eval_call(AST *expr, HTable *vars, int32_t *value)
   args = CDR(CDR(expr));
 
   if (!strcmp(callee, "+") || !strcmp(callee, "-") || !strcmp(callee, "*") || !strcmp(callee, "/") ||
-      !strcmp(callee, ">") || !strcmp(callee, "<") || !strcmp(callee, "==") || !strcmp(callee, ">=") ||
-      !strcmp(callee, "<="))
+      !strcmp(callee, ">") || !strcmp(callee, "<") || !strcmp(callee, "=") || !strcmp(callee, "==") ||
+      !strcmp(callee, ">=") || !strcmp(callee, "<="))
   {
     if (list_len(args) != 2)
       return fprintf(stderr, "Fatal: arithmetic call '%s' must have 2 args\n", callee), -1;
@@ -189,6 +192,11 @@ static int eval_expr(AST *expr, HTable *vars, int32_t *value)
     *value = (int32_t)strtol(expr->value, NULL, 10);
     return 0;
   case NAME:
+    if (!strcmp(expr->value, "nil") || !strcmp(expr->value, "void"))
+    {
+      *value = 0;
+      return 0;
+    }
     return get_var(vars, expr->value, value);
   case SEXP:
     if (is_form(expr, "phi"))
@@ -385,7 +393,7 @@ static int interpret_cfg(AST *blocks, int32_t *result)
   int status = -1;
 
   if (!blocks || blocks->type != SEXP)
-    return fprintf(stderr, "Fatal: program must be a list of basic blocks\n"), -1;
+    return fprintf(stderr, "Fatal: function body must be a list of basic blocks\n"), -1;
 
   if (register_blocks(blocks, block_tab, &entry_block) == 0)
   {
@@ -408,7 +416,6 @@ static int interpret_cfg(AST *blocks, int32_t *result)
       if (!next_label)
       {
         fprintf(stderr, "Fatal: basic block '%s' has no terminator\n", FIRST(current_block)->value);
-        status = -1;
         break;
       }
       if (!ht_get(block_tab, next_label, (void **)&next_block))
@@ -464,7 +471,10 @@ static int interpret_module(AST *module_forms, int32_t *result)
   if (status == 0)
   {
     if (!main_func)
-      status = fprintf(stderr, "Fatal: function 'main' not found\n"), -1;
+    {
+      fprintf(stderr, "Fatal: function 'main' not found\n");
+      status = -1;
+    }
     else
       status = interpret_cfg(CDR(CDR(main_func)), result);
   }

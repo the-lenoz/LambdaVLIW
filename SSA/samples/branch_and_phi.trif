@@ -1,0 +1,24 @@
+(
+  (func cond_provider
+  )
+  (func calc
+  )
+  (func branch_main
+    (bb0
+    (let v0 (call cond_provider))
+    (if-goto v0 bb1 else bb2)
+    )
+    (bb1
+    (let v1 (call calc v0))
+    (goto bb3)
+    )
+    (bb2
+    (let v2 (call calc))
+    (goto bb3)
+    )
+    (bb3
+    (let v3 (phi (bb1 v1) (bb2 v2)))
+    (return v3)
+    )
+  )
+)

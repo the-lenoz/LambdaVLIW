@@ -1,0 +1,36 @@
+digraph SSA {
+  rankdir=TB;
+  newrank=true;
+  ranksep=0.9;
+  nodesep=0.35;
+  splines=true;
+  fontname="Helvetica";
+  node [fontname="Menlo"];
+  edge [fontname="Menlo"];
+  subgraph cluster_f0 {
+    color="#90a4ae"; style="rounded,filled"; fillcolor="#f3f7fa"; penwidth=1.4;
+    margin=16;
+    labelloc=t; label="invalid_case";
+    f0_order [shape=point, style=invis, width=0, height=0, label=""];
+    f0_entry [shape=circle, fixedsize=true, width=0.34, label="", style=filled, fillcolor="#81c784", color="#2e7d32"];
+    f0_bb0 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#edf7ee">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#c8e6c9"><B>bb0 [entry]</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v0 = call invalid_case()</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">if v0 then bb0 else bb1</FONT></TD></TR>
+      </TABLE>
+    >];
+    f0_bb1 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#fff8ef">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#ffe0b2"><B>bb1 [exit]</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v1 = call invalid_case()</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">return v1</FONT></TD></TR>
+      </TABLE>
+    >];
+    f0_entry -> f0_bb0 [label="entry", color="#2e7d32", penwidth=1.4];
+    f0_bb0 -> f0_bb0 [label="T", color="#2e7d32", penwidth=1.3];
+    f0_bb0 -> f0_bb1 [label="F", color="#c62828", penwidth=1.3];
+    f0_ret [shape=doublecircle, label="return", color="#6a1b9a", penwidth=1.4];
+    f0_bb1 -> f0_ret [style=dashed, color="#6a1b9a", label="v1"];
+  }
+}

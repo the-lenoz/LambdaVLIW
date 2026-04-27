@@ -73,6 +73,11 @@ static int is_valid_value(const SSAFunc *func, SSAValName value)
   return func && value < func->values_count;
 }
 
+static int is_valid_or_void_value(const SSAFunc *func, SSAValName value)
+{
+  return value == SSA_VAL_VOID || is_valid_value(func, value);
+}
+
 static int bb_has_terminator(const SSAFunc *func, SSABasicBlockName bb)
 {
   return is_valid_bb(func, bb) && func->basic_blocks[bb].terminator.type != SSA_TERM_NONE;
@@ -325,6 +330,23 @@ SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
   return append_value(function, value);
 }
 
+SSAValName emit_const_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, int value)
+{
+  SSAFunc *function = get_func(module, func);
+  SSAValue ssa_value;
+
+  if (!function || !is_valid_bb(function, BB))
+    return SSA_INVALID_VAL;
+
+  ssa_value = (SSAValue){};
+  ssa_value.type = SSA_VALUE_CONST;
+  ssa_value.is_const = 1;
+  ssa_value.expr.cnst.value = value;
+  ssa_value.parent_name = BB;
+
+  return append_value(function, ssa_value);
+}
+
 int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName cond_name,
                    SSABasicBlockName true_dst, SSABasicBlockName false_dst)
 {
@@ -380,7 +402,7 @@ int emit_return(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAVa
     return -1;
   if (function->exit_block == SSA_INVALID_BB || BB != function->exit_block)
     return -1;
-  if (!is_valid_value(function, ret_name))
+  if (!is_valid_or_void_value(function, ret_name))
     return -1;
   if (bb_has_terminator(function, BB))
     return -1;

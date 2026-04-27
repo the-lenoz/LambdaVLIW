@@ -1,0 +1,16 @@
+(
+  (func main
+    (bb0
+      (let v0 (call + 1 2))
+      (let v1 (call > v0 2))
+      (if-goto v1 bb1 else bb2)
+    )
+    (bb1
+      (let v2 (call * v0 10))
+      (return v2)
+    )
+    (bb2
+      (return 0)
+    )
+  )
+)

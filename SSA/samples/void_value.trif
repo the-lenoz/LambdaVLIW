@@ -1,0 +1,10 @@
+(
+  (func void_main
+    (bb0
+    (goto bb1)
+    )
+    (bb1
+    (return nil)
+    )
+  )
+)

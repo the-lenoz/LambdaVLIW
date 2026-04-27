@@ -1,0 +1,41 @@
+digraph SSA {
+  rankdir=TB;
+  newrank=true;
+  ranksep=0.9;
+  nodesep=0.35;
+  splines=true;
+  fontname="Helvetica";
+  node [fontname="Menlo"];
+  edge [fontname="Menlo"];
+  subgraph cluster_f0 {
+    color="#90a4ae"; style="rounded,filled"; fillcolor="#f3f7fa"; penwidth=1.4;
+    margin=16;
+    labelloc=t; label="callee";
+    f0_order [shape=point, style=invis, width=0, height=0, label=""];
+  }
+  subgraph cluster_f1 {
+    color="#90a4ae"; style="rounded,filled"; fillcolor="#f3f7fa"; penwidth=1.4;
+    margin=16;
+    labelloc=t; label="main";
+    f1_order [shape=point, style=invis, width=0, height=0, label=""];
+    f1_entry [shape=circle, fixedsize=true, width=0.34, label="", style=filled, fillcolor="#81c784", color="#2e7d32"];
+    f1_bb0 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#edf7ee">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#c8e6c9"><B>bb0 [entry]</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v0 = call callee() [const]</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">goto bb1</FONT></TD></TR>
+      </TABLE>
+    >];
+    f1_bb1 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#fff8ef">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#ffe0b2"><B>bb1 [exit]</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">return v0</FONT></TD></TR>
+      </TABLE>
+    >];
+    f1_entry -> f1_bb0 [label="entry", color="#2e7d32", penwidth=1.4];
+    f1_bb0 -> f1_bb1 [label="goto", color="#1565c0"];
+    f1_ret [shape=doublecircle, label="return", color="#6a1b9a", penwidth=1.4];
+    f1_bb1 -> f1_ret [style=dashed, color="#6a1b9a", label="v0"];
+  }
+  f0_order -> f1_order [style=invis, weight=200, minlen=2];
+}

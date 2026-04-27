@@ -1,4 +1,4 @@
-#include "SSA_dump_L_tri_if.h"
+#include "SSA_to_L_tri_call.h"
 
 static const SSAFunc *dump_get_func(const SSAModule *module, SSAFuncName func)
 {
@@ -9,6 +9,8 @@ static const SSAFunc *dump_get_func(const SSAModule *module, SSAFuncName func)
 
 static int dump_print_val_name(FILE *out_fp, SSAValName name)
 {
+  if (name == SSA_VAL_VOID)
+    return fprintf(out_fp, "nil") < 0 ? -1 : 0;
   return fprintf(out_fp, "v%u", name) < 0 ? -1 : 0;
 }
 
@@ -85,6 +87,11 @@ static int dump_emit_value(FILE *out_fp, const SSAModule *module, const SSAFunc 
   if (value->type == SSA_VALUE_PHI)
   {
     if (dump_print_phi(out_fp, value->expr.phi.options) < 0)
+      return -1;
+  }
+  else if (value->type == SSA_VALUE_CONST)
+  {
+    if (fprintf(out_fp, "%d", value->expr.cnst.value) < 0)
       return -1;
   }
   else if (value->type == SSA_VALUE_CALL)
@@ -166,6 +173,8 @@ static int dump_emit_block(FILE *out_fp, const SSAModule *module, const SSAFunc 
 
   if (dump_emit_block_values(out_fp, module, func, bb, SSA_VALUE_PHI) < 0)
     return -1;
+  if (dump_emit_block_values(out_fp, module, func, bb, SSA_VALUE_CONST) < 0)
+    return -1;
   if (dump_emit_block_values(out_fp, module, func, bb, SSA_VALUE_CALL) < 0)
     return -1;
   if (dump_emit_terminator(out_fp, &func->basic_blocks[bb].terminator) < 0)
@@ -174,7 +183,7 @@ static int dump_emit_block(FILE *out_fp, const SSAModule *module, const SSAFunc 
   return fprintf(out_fp, "    )\n") < 0 ? -1 : 0;
 }
 
-int SSA_dump_func_L_tri_if(const SSAModule *module, SSAFuncName func, FILE *out_fp)
+int SSA_to_L_tri_call_func(const SSAModule *module, SSAFuncName func, FILE *out_fp)
 {
   const SSAFunc *fn = dump_get_func(module, func);
 
@@ -201,7 +210,7 @@ int SSA_dump_func_L_tri_if(const SSAModule *module, SSAFuncName func, FILE *out_
   return fprintf(out_fp, "  )\n") < 0 ? -1 : 0;
 }
 
-int SSA_dump_module_L_tri_if(const SSAModule *module, FILE *out_fp)
+int SSA_to_L_tri_call_module(const SSAModule *module, FILE *out_fp)
 {
   if (!module || !out_fp)
     return -1;
@@ -210,7 +219,7 @@ int SSA_dump_module_L_tri_if(const SSAModule *module, FILE *out_fp)
     return -1;
 
   for (SSAFuncName fn = 0; fn < module->functions_count; ++fn)
-    if (SSA_dump_func_L_tri_if(module, fn, out_fp) < 0)
+    if (SSA_to_L_tri_call_func(module, fn, out_fp) < 0)
       return -1;
 
   return fprintf(out_fp, ")\n") < 0 ? -1 : 0;

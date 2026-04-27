@@ -1,0 +1,13 @@
+(
+  (func const_main
+    (bb0
+    (let v0 42)
+    (let v1 2147483647)
+    (goto bb1)
+    )
+    (bb1
+    (let v2 -2147483648)
+    (return v2)
+    )
+  )
+)
