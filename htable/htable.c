@@ -35,7 +35,7 @@ static size_t str_hash(const void *k)
   return hash;
 }
 
-static void *str_k_dup(const void *k) { return k ? strcpy(calloc(strlen(k) + 1, sizeof(char)), k) : NULL; }
+static void *str_k_dup(const void *k) { return k ? strdup(k) : NULL; }
 
 static inline size_t _ht_getindex(HTable *ht, const void *k)
 {

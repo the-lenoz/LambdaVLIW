@@ -1,7 +1,7 @@
 (
   (func cond_provider
   )
-  (func calc
+  (func calc v0
   )
   (func branch_main
     (bb0

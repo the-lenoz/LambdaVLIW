@@ -19,6 +19,22 @@ static int dump_print_bb_name(FILE *out_fp, SSABasicBlockName bb)
   return fprintf(out_fp, "bb%u", bb) < 0 ? -1 : 0;
 }
 
+static int dump_print_func_args(FILE *out_fp, const SSAFunc *func)
+{
+  if (!func)
+    return -1;
+
+  for (unsigned int i = 0; i < func->args_count; ++i)
+  {
+    if (func->values[i].type != SSA_VALUE_ARG)
+      return -1;
+    if (fprintf(out_fp, " ") < 0 || dump_print_val_name(out_fp, (SSAValName)i) < 0)
+      return -1;
+  }
+
+  return 0;
+}
+
 static int dump_print_args(FILE *out_fp, const ArgList *args)
 {
   for (const ArgList *it = args; it; it = it->next)
@@ -168,7 +184,8 @@ int SSA_to_L_tri_call_func(const SSAModule *module, SSAFuncName func, FILE *out_
   if (!fn || !out_fp || !fn->name)
     return -1;
 
-  if (fprintf(out_fp, "  (func %s\n", fn->name) < 0)
+  if (fprintf(out_fp, "  (func %s", fn->name) < 0 || dump_print_func_args(out_fp, fn) < 0 ||
+      fprintf(out_fp, "\n") < 0)
     return -1;
 
   if (fn->entry_block != SSA_INVALID_BB)

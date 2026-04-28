@@ -1,0 +1,23 @@
+(
+  (func twice v0
+    (bb0
+      (let v1 (call + v0 v0))
+      (return v1)
+    )
+  )
+  (func add_then_double v0 v1
+    (bb0
+      (let v2 (call + v0 v1))
+      (let v3 (call twice v2))
+      (return v3)
+    )
+  )
+  (func main
+    (bb0
+      (let v0 10)
+      (let v1 5)
+      (let v2 (call add_then_double v0 v1))
+      (return v2)
+    )
+  )
+)

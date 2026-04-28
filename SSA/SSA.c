@@ -151,7 +151,7 @@ void destroy_module(SSAModule *module)
   free(module);
 }
 
-SSAFuncName new_func(SSAModule *module, const char *name, int is_global /*maybe other properties*/)
+SSAFuncName new_func(SSAModule *module, const char *name, unsigned int args_count, int is_global)
 {
   SSAFunc *func;
 
@@ -167,16 +167,30 @@ SSAFuncName new_func(SSAModule *module, const char *name, int is_global /*maybe 
   func = &module->functions[module->functions_count];
   *func = (SSAFunc){};
 
-  func->name = (char *)malloc(strlen(name) + 1);
+  func->name = strdup(name);
   if (!func->name)
     return SSA_INVALID_FUNC;
 
-  strcpy(func->name, name);
-
-  func->values_cap = BASIC_ARRAY_SIZE;
+  func->values_cap = BASIC_ARRAY_SIZE + args_count;
   func->values = (SSAValue *)calloc(func->values_cap, sizeof(SSAValue));
   if (!func->values)
   {
+    free(func->name);
+    *func = (SSAFunc){};
+    return SSA_INVALID_FUNC;
+  }
+
+  func->values_count = args_count;
+  for (unsigned int i = 0; i < args_count; ++i)
+  {
+    func->values[i].type = SSA_VALUE_ARG;
+  }
+
+  func->args_count = args_count;
+  func->arg_SSA_names = (SSAValName *)calloc(func->args_count, sizeof(SSAValName));
+  if (!func->arg_SSA_names)
+  {
+    free(func->values);
     free(func->name);
     *func = (SSAFunc){};
     return SSA_INVALID_FUNC;
@@ -188,6 +202,7 @@ SSAFuncName new_func(SSAModule *module, const char *name, int is_global /*maybe 
   {
     free(func->values);
     free(func->name);
+    free(func->arg_SSA_names);
     *func = (SSAFunc){};
     return SSA_INVALID_FUNC;
   }
@@ -273,6 +288,15 @@ SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
   value.parent_name = BB;
 
   return append_value(function, value);
+}
+
+SSAValName get_arg_val_name(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, unsigned int arg_index)
+{
+  if (!module || func >= module->functions_count || BB >= module->functions[func].basic_blocks_count ||
+      arg_index >= module->functions[func].args_count)
+    return SSA_INVALID_VAL;
+
+  return module->functions[func].arg_SSA_names[arg_index];
 }
 
 SSAValName emit_const_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, int value)

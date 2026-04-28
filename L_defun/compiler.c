@@ -21,11 +21,18 @@ static VarMappingList *add_var(VarMappingList *head, const char *name, SSAValNam
 {
   VarMappingList *new_head = malloc(sizeof(VarMappingList));
   *new_head = (VarMappingList){
-      memcpy(malloc(strlen(name) + 1), name, strlen(name) + 1),
+    strdup(name),
       SSA_name,
       head};
   return new_head;
 }
+
+static int AST_list_len(AST *l)
+{
+  if (!l)
+    return 0;
+  return 1 + AST_list_len(CDR(l));
+}    
 
 static void destroy_var_mapping_untill(VarMappingList *start, VarMappingList *end)
 {
@@ -137,6 +144,17 @@ SSAValName compile_expr(AST *expr, VarMappingList *vars, HTable *funcs, SSAModul
   STR_MATCH_END
 }
 
+SSAFuncName build_function(AST *definition, SSAModule *module, HTable *funcs)
+{
+  if (!definition || !module || !funcs)
+    return SSA_INVALID_FUNC;
+  const char *name = SECOND(definition)->value;
+  AST *arg_list = THIRD(definition);
+  AST *body = THIRD(CDR(definition)); // FOURTH
+  
+  SSAFuncName func = new_func(module, name, AST_list_len(arg_list), 1);
+}
+
 SSAModule *build_program(AST *program)
 {
   if (!program)
@@ -147,17 +165,17 @@ SSAModule *build_program(AST *program)
 
   SSAModule *module = new_module();
 
-#define DECLARE_FUNC_STUB(name) ht_set(funcs, name, (void *)(size_t)new_func(module, name, 0))
-  DECLARE_FUNC_STUB("+");
-  DECLARE_FUNC_STUB("-");
-  DECLARE_FUNC_STUB("*");
-  DECLARE_FUNC_STUB("/");
-  DECLARE_FUNC_STUB(">");
-  DECLARE_FUNC_STUB("<");
-  DECLARE_FUNC_STUB("=");
-#undef DECLARE_FUNC_STUB
+#define DECLARE_BIN_FUNC_STUB(name) ht_set(funcs, name, (void *)(size_t)new_func(module, name, 2, 0))
+  DECLARE_BIN_FUNC_STUB("+");
+  DECLARE_BIN_FUNC_STUB("-");
+  DECLARE_BIN_FUNC_STUB("*");
+  DECLARE_BIN_FUNC_STUB("/");
+  DECLARE_BIN_FUNC_STUB(">");
+  DECLARE_BIN_FUNC_STUB("<");
+  DECLARE_BIN_FUNC_STUB("=");
+#undef DECLARE_BIN_FUNC_STUB
 
-  SSAFuncName fn = new_func(module, "main", 1);
+  SSAFuncName fn = new_func(module, "main", 0, 1);
   SSABasicBlockName entry_block, exit_block, active_block;
   entry_block = new_BB(module, fn, 1, 0);
   exit_block = new_BB(module, fn, 0, 1);

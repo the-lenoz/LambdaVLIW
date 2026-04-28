@@ -58,6 +58,7 @@ typedef enum
   SSA_VALUE_INVALID = 0,
   SSA_VALUE_PHI,
   SSA_VALUE_CALL,
+  SSA_VALUE_ARG,
   SSA_VALUE_CONST,
 } SSAValueType;
 
@@ -100,6 +101,9 @@ typedef struct
   unsigned int values_cap;
   SSAValue *values;
 
+  unsigned int args_count;
+  SSAValName *arg_SSA_names;
+
   unsigned int basic_blocks_count;
   unsigned int basic_blocks_cap;
   SSABasicBlock *basic_blocks;
@@ -119,11 +123,12 @@ struct _SSAModule
 
 SSAModule *new_module();
 void destroy_module(SSAModule *module);
-SSAFuncName new_func(SSAModule *module, const char *name, int is_global /*maybe other properties*/);
+SSAFuncName new_func(SSAModule *module, const char *name, unsigned int args_count, int is_global);
 SSABasicBlockName new_BB(SSAModule *module, SSAFuncName func, int is_entry, int is_exit);
 SSAValName emit_phi_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, PhiList *phi_list);
 SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
                             SSABasicBlockName BB, SSAFuncName callee, ArgList *arg_list, int is_constexpr);
+SSAValName get_arg_val_name(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, unsigned int arg_index);
 SSAValName emit_const_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, int value);
 
 int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName cond_name,

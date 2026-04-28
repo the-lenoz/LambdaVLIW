@@ -12,62 +12,6 @@ typedef struct PhiBinding
   struct PhiBinding *next;
 } PhiBinding;
 
-static size_t strhash(const void *k)
-{
-  const unsigned char *str = (const unsigned char *)k;
-  size_t hash = 5381;
-  int c;
-
-  while ((c = *str++))
-    hash = ((hash << 5) + hash) + c;
-
-  return hash;
-}
-
-static int str_eq(const void *a, const void *b) { return !strcmp(a, b); }
-
-static void free_key_only(HTable *ht, void *k, void *v)
-{
-  (void)ht;
-  (void)v;
-  free(k);
-}
-
-static void free_key_and_value(HTable *ht, void *k, void *v)
-{
-  (void)ht;
-  free(k);
-  free(v);
-}
-
-static void *k_dup(const void *k)
-{
-  const char *src = (const char *)k;
-  size_t n;
-  char *copy;
-
-  if (!src)
-    return NULL;
-
-  n = strlen(src);
-  copy = malloc(n + 1);
-  if (!copy)
-    return NULL;
-
-  memcpy(copy, src, n + 1);
-  return copy;
-}
-static void *ptr_dup(const void *v) { return (void *)v; }
-
-static void *int_dup(const void *v)
-{
-  int32_t *copy = malloc(sizeof(*copy));
-  if (!copy)
-    return NULL;
-  *copy = *(const int32_t *)v;
-  return copy;
-}
-
 static AST *list_nth(AST *list, int index)
 {
   for (AST *item = list; item; item = CDR(item), --index)
@@ -377,8 +321,8 @@ static int execute_block(AST *block, const char *prev_block, HTable *vars, const
 
 static int interpret_cfg(AST *blocks, int32_t *result)
 {
-  HTable *block_tab = ht_init(strhash, str_eq, k_dup, ptr_dup, free_key_only, 0);
-  HTable *vars = ht_init(strhash, str_eq, k_dup, int_dup, free_key_and_value, 0);
+  HTable *block_tab = ht_init(0);
+  HTable *vars = ht_init(0);
   AST *entry_block = NULL;
   AST *current_block = NULL;
   const char *prev_block = NULL;
@@ -453,7 +397,7 @@ static int register_functions(AST *module_forms, HTable *func_tab, AST **main_fu
 
 static int interpret_module(AST *module_forms, int32_t *result)
 {
-  HTable *func_tab = ht_init(strhash, str_eq, k_dup, ptr_dup, free_key_only, 0);
+  HTable *func_tab = ht_init(0);
   AST *main_func = NULL;
   int status;
 

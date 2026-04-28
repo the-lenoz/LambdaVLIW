@@ -5,69 +5,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct VarBinding
+{
+  char *name;
+  int32_t value;
+  struct VarBinding *next;
+} VarBinding;
+
 typedef struct PhiBinding
 {
   const char *name;
   int32_t value;
   struct PhiBinding *next;
 } PhiBinding;
-
-static size_t strhash(const void *k)
-{
-  const unsigned char *str = (const unsigned char *)k;
-  size_t hash = 5381;
-  int c;
-
-  while ((c = *str++))
-    hash = ((hash << 5) + hash) + c;
-
-  return hash;
-}
-
-static int str_eq(const void *a, const void *b) { return !strcmp(a, b); }
-
-static void free_key_only(HTable *ht, void *k, void *v)
-{
-  (void)ht;
-  (void)v;
-  free(k);
-}
-
-static void free_key_and_value(HTable *ht, void *k, void *v)
-{
-  (void)ht;
-  free(k);
-  free(v);
-}
-
-static void *k_dup(const void *k)
-{
-  const char *src = (const char *)k;
-  size_t n;
-  char *copy;
-
-  if (!src)
-    return NULL;
-
-  n = strlen(src);
-  copy = malloc(n + 1);
-  if (!copy)
-    return NULL;
-
-  memcpy(copy, src, n + 1);
-  return copy;
-}
-
-static void *ptr_dup(const void *v) { return (void *)v; }
-
-static void *int_dup(const void *v)
-{
-  int32_t *copy = malloc(sizeof(*copy));
-  if (!copy)
-    return NULL;
-  *copy = *(const int32_t *)v;
-  return copy;
-}
 
 static AST *list_nth(AST *list, int index)
 {
@@ -89,21 +39,101 @@ static int is_if_goto_form(AST *expr)
   return is_form(expr, "if-goto") || is_form(expr, "goto-if");
 }
 
-static int get_var(HTable *vars, const char *name, int32_t *value)
+static void free_var_bindings(VarBinding *vars)
 {
-  int32_t *stored = NULL;
-  if (!ht_get(vars, name, (void **)&stored))
-    return fprintf(stderr, "Fatal: undefined variable '%s'\n", name), -1;
-  *value = *stored;
+  while (vars)
+  {
+    VarBinding *next = vars->next;
+    free(vars->name);
+    free(vars);
+    vars = next;
+  }
+}
+
+static int get_var(VarBinding *vars, const char *name, int32_t *value)
+{
+  for (VarBinding *it = vars; it; it = it->next)
+  {
+    if (!strcmp(it->name, name))
+    {
+      *value = it->value;
+      return 0;
+    }
+  }
+
+  return fprintf(stderr, "Fatal: undefined variable '%s'\n", name), -1;
+}
+
+static int set_var(VarBinding **vars, const char *name, int32_t value)
+{
+  VarBinding *binding;
+
+  if (!vars || !name)
+    return -1;
+
+  for (VarBinding *it = *vars; it; it = it->next)
+  {
+    if (!strcmp(it->name, name))
+    {
+      it->value = value;
+      return 0;
+    }
+  }
+
+  binding = malloc(sizeof(*binding));
+  if (!binding)
+    return -1;
+
+  binding->name = strdup(name);
+  if (!binding->name)
+    return free(binding), -1;
+
+  binding->value = value;
+  binding->next = *vars;
+  *vars = binding;
   return 0;
 }
 
-static int set_var(HTable *vars, const char *name, int32_t value)
+static int parse_function_definition(AST *func, const char **name, AST **params, AST **body, int *param_count)
 {
-  return ht_set(vars, name, &value) < 0 ? -1 : 0;
+  AST *func_name = func ? SECOND(func) : NULL;
+  AST *cursor;
+
+  if (!func || func->type != SEXP || !is_form(func, "func") || !func_name || !is_name(func_name))
+    return fprintf(stderr, "Fatal: malformed function definition\n"), -1;
+
+  cursor = CDR(CDR(func));
+  if (name)
+    *name = func_name->value;
+  if (params)
+    *params = cursor;
+  if (param_count)
+    *param_count = 0;
+
+  while (cursor)
+  {
+    AST *item = CAR(cursor);
+    if (!item)
+      return fprintf(stderr, "Fatal: malformed function definition\n"), -1;
+    if (item->type == NAME)
+    {
+      if (param_count)
+        *param_count += 1;
+      cursor = CDR(cursor);
+      continue;
+    }
+    if (item->type == SEXP)
+      break;
+    return fprintf(stderr, "Fatal: malformed function definition\n"), -1;
+  }
+
+  if (body)
+    *body = cursor;
+  return 0;
 }
 
-static int eval_expr(AST *expr, HTable *vars, int32_t *value);
+static int eval_expr(AST *expr, VarBinding *vars, HTable *func_tab, int32_t *value);
+static int interpret_function(AST *func, AST *arg_exprs, VarBinding *caller_vars, HTable *func_tab, int32_t *result);
 
 static int eval_binary_op(const char *op, int32_t lhs, int32_t rhs, int32_t *value)
 {
@@ -138,7 +168,7 @@ static int eval_binary_op(const char *op, int32_t lhs, int32_t rhs, int32_t *val
   return 0;
 }
 
-static int eval_binary(AST *expr, HTable *vars, int32_t *value)
+static int eval_binary(AST *expr, VarBinding *vars, HTable *func_tab, int32_t *value)
 {
   int32_t lhs;
   int32_t rhs;
@@ -146,15 +176,16 @@ static int eval_binary(AST *expr, HTable *vars, int32_t *value)
   if (!expr || expr->type != SEXP || list_len(expr) != 3 || !is_name(FIRST(expr)))
     return fprintf(stderr, "Fatal: malformed expression\n"), -1;
 
-  if (eval_expr(SECOND(expr), vars, &lhs) < 0 || eval_expr(THIRD(expr), vars, &rhs) < 0)
+  if (eval_expr(SECOND(expr), vars, func_tab, &lhs) < 0 || eval_expr(THIRD(expr), vars, func_tab, &rhs) < 0)
     return -1;
 
   return eval_binary_op(GET_OP(expr), lhs, rhs, value);
 }
 
-static int eval_call(AST *expr, HTable *vars, int32_t *value)
+static int eval_call(AST *expr, VarBinding *vars, HTable *func_tab, int32_t *value)
 {
   AST *args;
+  AST *func = NULL;
   int32_t lhs;
   int32_t rhs;
   const char *callee;
@@ -172,16 +203,19 @@ static int eval_call(AST *expr, HTable *vars, int32_t *value)
     if (list_len(args) != 2)
       return fprintf(stderr, "Fatal: arithmetic call '%s' must have 2 args\n", callee), -1;
 
-    if (eval_expr(FIRST(args), vars, &lhs) < 0 || eval_expr(SECOND(args), vars, &rhs) < 0)
+    if (eval_expr(FIRST(args), vars, func_tab, &lhs) < 0 || eval_expr(SECOND(args), vars, func_tab, &rhs) < 0)
       return -1;
 
     return eval_binary_op(callee, lhs, rhs, value);
   }
 
-  return fprintf(stderr, "Fatal: unsupported call target '%s'\n", callee), -1;
+  if (!ht_get(func_tab, callee, (void **)&func))
+    return fprintf(stderr, "Fatal: unknown function '%s'\n", callee), -1;
+
+  return interpret_function(func, args, vars, func_tab, value);
 }
 
-static int eval_expr(AST *expr, HTable *vars, int32_t *value)
+static int eval_expr(AST *expr, VarBinding *vars, HTable *func_tab, int32_t *value)
 {
   if (!expr)
     return fprintf(stderr, "Fatal: unexpected nil expression\n"), -1;
@@ -202,14 +236,14 @@ static int eval_expr(AST *expr, HTable *vars, int32_t *value)
     if (is_form(expr, "phi"))
       return fprintf(stderr, "Fatal: phi is only allowed in let instructions\n"), -1;
     if (is_form(expr, "call"))
-      return eval_call(expr, vars, value);
-    return eval_binary(expr, vars, value);
+      return eval_call(expr, vars, func_tab, value);
+    return eval_binary(expr, vars, func_tab, value);
   default:
     return fprintf(stderr, "Fatal: unexpected expression type\n"), -1;
   }
 }
 
-static int eval_phi(AST *expr, const char *prev_block, HTable *vars, int32_t *value)
+static int eval_phi(AST *expr, const char *prev_block, VarBinding *vars, HTable *func_tab, int32_t *value)
 {
   if (!is_form(expr, "phi") || list_len(expr) < 2)
     return fprintf(stderr, "Fatal: malformed phi node\n"), -1;
@@ -224,7 +258,7 @@ static int eval_phi(AST *expr, const char *prev_block, HTable *vars, int32_t *va
       return fprintf(stderr, "Fatal: malformed phi input\n"), -1;
 
     if (!strcmp(FIRST(source)->value, prev_block))
-      return eval_expr(SECOND(source), vars, value);
+      return eval_expr(SECOND(source), vars, func_tab, value);
   }
 
   return fprintf(stderr, "Fatal: phi has no input for predecessor '%s'\n", prev_block), -1;
@@ -240,8 +274,8 @@ static void free_phi_bindings(PhiBinding *bindings)
   }
 }
 
-static int collect_phi_bindings(AST *instructions, const char *prev_block, HTable *vars, PhiBinding **bindings,
-                                AST **rest)
+static int collect_phi_bindings(AST *instructions, const char *prev_block, VarBinding *vars, HTable *func_tab,
+                                PhiBinding **bindings, AST **rest)
 {
   PhiBinding *head = NULL;
   PhiBinding **tail = &head;
@@ -263,7 +297,7 @@ static int collect_phi_bindings(AST *instructions, const char *prev_block, HTabl
     binding->name = SECOND(instr)->value;
     binding->next = NULL;
 
-    if (eval_phi(THIRD(instr), prev_block, vars, &binding->value) < 0)
+    if (eval_phi(THIRD(instr), prev_block, vars, func_tab, &binding->value) < 0)
       return free(binding), free_phi_bindings(head), -1;
 
     *tail = binding;
@@ -276,7 +310,7 @@ static int collect_phi_bindings(AST *instructions, const char *prev_block, HTabl
   return 0;
 }
 
-static int apply_phi_bindings(HTable *vars, PhiBinding *bindings)
+static int apply_phi_bindings(VarBinding **vars, PhiBinding *bindings)
 {
   for (PhiBinding *binding = bindings; binding; binding = binding->next)
     if (set_var(vars, binding->name, binding->value) < 0)
@@ -305,8 +339,8 @@ static int register_blocks(AST *blocks, HTable *block_tab, AST **entry_block)
   return 0;
 }
 
-static int execute_block(AST *block, const char *prev_block, HTable *vars, const char **next_block, int *did_return,
-                         int32_t *returned_value)
+static int execute_block(AST *block, const char *prev_block, VarBinding **vars, HTable *func_tab,
+                         const char **next_block, int *did_return, int32_t *returned_value)
 {
   AST *instructions = CDR(block);
   AST *cursor = instructions;
@@ -314,7 +348,7 @@ static int execute_block(AST *block, const char *prev_block, HTable *vars, const
 
   *next_block = NULL;
   *did_return = 0;
-  if (collect_phi_bindings(instructions, prev_block, vars, &bindings, &cursor) < 0)
+  if (collect_phi_bindings(instructions, prev_block, *vars, func_tab, &bindings, &cursor) < 0)
     return -1;
   if (apply_phi_bindings(vars, bindings) < 0)
     return free_phi_bindings(bindings), -1;
@@ -333,7 +367,7 @@ static int execute_block(AST *block, const char *prev_block, HTable *vars, const
         return fprintf(stderr, "Fatal: malformed let instruction\n"), -1;
       if (is_form(THIRD(instr), "phi"))
         return fprintf(stderr, "Fatal: phi nodes must be at the start of a block\n"), -1;
-      if (eval_expr(THIRD(instr), vars, &value) < 0)
+      if (eval_expr(THIRD(instr), *vars, func_tab, &value) < 0)
         return -1;
       if (set_var(vars, SECOND(instr)->value, value) < 0)
         return -1;
@@ -361,7 +395,7 @@ static int execute_block(AST *block, const char *prev_block, HTable *vars, const
       if (list_len(instr) != 5 || !is_name(cond_var) || !is_name(then_block) || !is_name(else_kw) || !is_name(else_block) ||
           strcmp(else_kw->value, "else"))
         return fprintf(stderr, "Fatal: malformed if-goto\n"), -1;
-      if (get_var(vars, cond_var->value, &cond_value) < 0)
+      if (get_var(*vars, cond_var->value, &cond_value) < 0)
         return -1;
       *next_block = cond_value ? then_block->value : else_block->value;
       return 0;
@@ -371,7 +405,7 @@ static int execute_block(AST *block, const char *prev_block, HTable *vars, const
     {
       if (list_len(instr) != 2)
         return fprintf(stderr, "Fatal: malformed return\n"), -1;
-      if (eval_expr(SECOND(instr), vars, returned_value) < 0)
+      if (eval_expr(SECOND(instr), *vars, func_tab, returned_value) < 0)
         return -1;
       *did_return = 1;
       return 0;
@@ -383,17 +417,16 @@ static int execute_block(AST *block, const char *prev_block, HTable *vars, const
   return 0;
 }
 
-static int interpret_cfg(AST *blocks, int32_t *result)
+static int interpret_cfg(AST *blocks, HTable *func_tab, VarBinding **vars, int32_t *result)
 {
-  HTable *block_tab = ht_init(strhash, str_eq, k_dup, ptr_dup, free_key_only, 0);
-  HTable *vars = ht_init(strhash, str_eq, k_dup, int_dup, free_key_and_value, 0);
+  HTable *block_tab = ht_init(0);
   AST *entry_block = NULL;
   AST *current_block = NULL;
   const char *prev_block = NULL;
   int status = -1;
 
   if (!blocks || blocks->type != SEXP)
-    return fprintf(stderr, "Fatal: function body must be a list of basic blocks\n"), -1;
+    return ht_destroy(block_tab), fprintf(stderr, "Fatal: function body must be a list of basic blocks\n"), -1;
 
   if (register_blocks(blocks, block_tab, &entry_block) == 0)
   {
@@ -405,7 +438,7 @@ static int interpret_cfg(AST *blocks, int32_t *result)
       int did_return = 0;
       int32_t returned_value = 0;
 
-      if (execute_block(current_block, prev_block, vars, &next_label, &did_return, &returned_value) < 0)
+      if (execute_block(current_block, prev_block, vars, func_tab, &next_label, &did_return, &returned_value) < 0)
         break;
       if (did_return)
       {
@@ -429,8 +462,66 @@ static int interpret_cfg(AST *blocks, int32_t *result)
     }
   }
 
-  ht_destroy(vars);
   ht_destroy(block_tab);
+  return status;
+}
+
+static int interpret_function(AST *func, AST *arg_exprs, VarBinding *caller_vars, HTable *func_tab, int32_t *result)
+{
+  AST *params = NULL;
+  AST *body = NULL;
+  AST *param_cursor;
+  AST *arg_cursor = arg_exprs;
+  VarBinding *callee_vars = NULL;
+  const char *func_name = NULL;
+  int status;
+
+  if (parse_function_definition(func, &func_name, &params, &body, NULL) < 0)
+    return -1;
+
+  for (param_cursor = params; param_cursor; param_cursor = CDR(param_cursor))
+  {
+    AST *param = CAR(param_cursor);
+    int32_t arg_value;
+
+    if (!param || param->type != NAME)
+      break;
+    if (!arg_cursor)
+    {
+      fprintf(stderr, "Fatal: call to '%s' has too few arguments\n", func_name);
+      status = -1;
+      goto cleanup;
+    }
+    if (eval_expr(CAR(arg_cursor), caller_vars, func_tab, &arg_value) < 0)
+    {
+      status = -1;
+      goto cleanup;
+    }
+    if (set_var(&callee_vars, param->value, arg_value) < 0)
+    {
+      status = -1;
+      goto cleanup;
+    }
+    arg_cursor = CDR(arg_cursor);
+  }
+
+  if (arg_cursor)
+  {
+    fprintf(stderr, "Fatal: call to '%s' has too many arguments\n", func_name);
+    status = -1;
+    goto cleanup;
+  }
+  if (!body)
+  {
+    fprintf(stderr, "Fatal: function '%s' has no body\n", func_name);
+    status = -1;
+    goto cleanup;
+  }
+
+  status = interpret_cfg(body, func_tab, &callee_vars, result);
+
+cleanup:
+  free_var_bindings(callee_vars);
   return status;
 }
 
@@ -439,20 +530,25 @@ static int register_functions(AST *module_forms, HTable *func_tab, AST **main_fu
   for (AST *item = module_forms; item; item = CDR(item))
   {
     AST *func = CAR(item);
-    AST *name = func ? SECOND(func) : NULL;
     AST *existing = NULL;
+    const char *name = NULL;
+    int param_count = 0;
 
-    if (!func || func->type != SEXP || !is_form(func, "func") || !name || !is_name(name))
-      return fprintf(stderr, "Fatal: malformed function definition\n"), -1;
-
-    if (ht_get(func_tab, name->value, (void **)&existing))
-      return fprintf(stderr, "Fatal: duplicate function '%s'\n", name->value), -1;
-
-    if (ht_set(func_tab, name->value, func) < 0)
+    if (parse_function_definition(func, &name, NULL, NULL, &param_count) < 0)
       return -1;
 
-    if (!strcmp(name->value, "main"))
+    if (ht_get(func_tab, name, (void **)&existing))
+      return fprintf(stderr, "Fatal: duplicate function '%s'\n", name), -1;
+
+    if (ht_set(func_tab, name, func) < 0)
+      return -1;
+
+    if (!strcmp(name, "main"))
+    {
+      if (param_count != 0)
+        return fprintf(stderr, "Fatal: function 'main' must not have arguments\n"), -1;
       *main_func = func;
+    }
   }
 
   return 0;
@@ -460,12 +556,12 @@ static int register_functions(AST *module_forms, HTable *func_tab, AST **main_fu
 
 static int interpret_module(AST *module_forms, int32_t *result)
 {
-  HTable *func_tab = ht_init(strhash, str_eq, k_dup, ptr_dup, free_key_only, 0);
+  HTable *func_tab = ht_init(0);
   AST *main_func = NULL;
   int status;
 
   if (!module_forms || module_forms->type != SEXP)
-    return fprintf(stderr, "Fatal: program must be a list of functions\n"), -1;
+    return ht_destroy(func_tab), fprintf(stderr, "Fatal: program must be a list of functions\n"), -1;
 
   status = register_functions(module_forms, func_tab, &main_func);
   if (status == 0)
@@ -476,7 +572,7 @@ static int interpret_module(AST *module_forms, int32_t *result)
       status = -1;
     }
     else
-      status = interpret_cfg(CDR(CDR(main_func)), result);
+      status = interpret_function(main_func, NULL, NULL, func_tab, result);
   }
 
   ht_destroy(func_tab);
@@ -510,14 +606,17 @@ int interpret_stream(FILE *fp)
 
 int process_file(const char *filename)
 {
+  int status;
+  FILE *fp;
+
   if (!filename)
     return -1;
 
-  FILE *fp = fopen(filename, "r");
+  fp = fopen(filename, "r");
   if (!fp)
     return fprintf(stderr, "Fatal: can't open file '%s'\n", filename), -1;
 
-  int status = interpret_stream(fp);
+  status = interpret_stream(fp);
   fclose(fp);
   return status;
 }

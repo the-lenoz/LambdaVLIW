@@ -3,6 +3,7 @@
 #include "SSA_to_L_tri_call.h"
 #include <limits.h>
 #include <stdio.h>
+#include <string.h>
 
 #define TEST_ASSERT(cond)                                                            \
   do                                                                                 \
@@ -54,6 +55,21 @@ static int dump_test_case(const char *case_name, const SSAModule *module)
   return 0;
 }
 
+static int stream_contains(FILE *fp, const char *needle)
+{
+  char buffer[1024];
+
+  if (!fp || !needle)
+    return 0;
+
+  rewind(fp);
+  while (fgets(buffer, sizeof(buffer), fp))
+    if (strstr(buffer, needle))
+      return 1;
+
+  return 0;
+}
+
 static int test_simple_call_and_return(void)
 {
   SSAModule *module;
@@ -68,10 +84,10 @@ static int test_simple_call_and_return(void)
   module = new_module();
   TEST_ASSERT(module != NULL);
 
-  callee = new_func(module, "callee", 1);
+  callee = new_func(module, "callee", 0, 1);
   TEST_ASSERT(callee != SSA_INVALID_FUNC);
 
-  caller = new_func(module, "main", 1);
+  caller = new_func(module, "main", 0, 1);
   TEST_ASSERT(caller != SSA_INVALID_FUNC);
 
   bb_entry = new_BB(module, caller, 1, 0);
@@ -140,9 +156,9 @@ static int test_branch_and_phi(void)
   module = new_module();
   TEST_ASSERT(module != NULL);
 
-  cond_fn = new_func(module, "cond_provider", 1);
-  calc_fn = new_func(module, "calc", 1);
-  main_fn_name = new_func(module, "branch_main", 1);
+  cond_fn = new_func(module, "cond_provider", 0, 1);
+  calc_fn = new_func(module, "calc", 1, 1);
+  main_fn_name = new_func(module, "branch_main", 0, 1);
   TEST_ASSERT(cond_fn != SSA_INVALID_FUNC);
   TEST_ASSERT(calc_fn != SSA_INVALID_FUNC);
   TEST_ASSERT(main_fn_name != SSA_INVALID_FUNC);
@@ -218,7 +234,7 @@ static int test_invalid_inputs(void)
   module = new_module();
   TEST_ASSERT(module != NULL);
 
-  fn = new_func(module, "invalid_case", 0);
+  fn = new_func(module, "invalid_case", 0, 0);
   TEST_ASSERT(fn != SSA_INVALID_FUNC);
 
   bb_entry = new_BB(module, fn, 1, 0);
@@ -269,7 +285,7 @@ static int test_const_assign(void)
   module = new_module();
   TEST_ASSERT(module != NULL);
 
-  fn = new_func(module, "const_main", 1);
+  fn = new_func(module, "const_main", 0, 1);
   TEST_ASSERT(fn != SSA_INVALID_FUNC);
 
   bb_entry = new_BB(module, fn, 1, 0);
@@ -319,7 +335,7 @@ static int test_void_value(void)
   module = new_module();
   TEST_ASSERT(module != NULL);
 
-  fn = new_func(module, "void_main", 1);
+  fn = new_func(module, "void_main", 0, 1);
   TEST_ASSERT(fn != SSA_INVALID_FUNC);
 
   bb_entry = new_BB(module, fn, 1, 0);
@@ -331,6 +347,33 @@ static int test_void_value(void)
   TEST_ASSERT(emit_return(module, fn, bb_exit, SSA_VAL_VOID) == 0);
 
   TEST_ASSERT(dump_test_case("void_value", module) == 0);
+
+  destroy_module(module);
+  return 0;
+}
+
+static int test_dump_func_args(void)
+{
+  SSAModule *module;
+  SSAFuncName fn;
+  SSABasicBlockName bb_entry;
+  FILE *fp;
+
+  module = new_module();
+  TEST_ASSERT(module != NULL);
+
+  fn = new_func(module, "with_args", 2, 1);
+  TEST_ASSERT(fn != SSA_INVALID_FUNC);
+
+  bb_entry = new_BB(module, fn, 1, 1);
+  TEST_ASSERT(bb_entry != SSA_INVALID_BB);
+  TEST_ASSERT(emit_return(module, fn, bb_entry, SSA_VAL_VOID) == 0);
+
+  fp = tmpfile();
+  TEST_ASSERT(fp != NULL);
+  TEST_ASSERT(SSA_to_L_tri_call_module(module, fp) == 0);
+  TEST_ASSERT(stream_contains(fp, "(func with_args v0 v1"));
+  fclose(fp);
 
   destroy_module(module);
   return 0;
@@ -352,6 +395,7 @@ int main(void)
       {"invalid_inputs", test_invalid_inputs},
       {"const_assign", test_const_assign},
       {"void_value", test_void_value},
+      {"dump_func_args", test_dump_func_args},
   };
   int failed = 0;
   size_t i;
