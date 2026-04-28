@@ -17,10 +17,34 @@ typedef struct _vm_list
   struct _vm_list *next;
 } VarMappingList;
 
-static VarMappingList *add_var(const VarMappingList *head)
+static VarMappingList *add_var(VarMappingList *head, const char *name, SSAValName SSA_name)
 {
-  return NULL;
-}    
+  VarMappingList *new_head = malloc(sizeof(VarMappingList));
+  *new_head = (VarMappingList){
+      memcpy(malloc(strlen(name) + 1), name, strlen(name) + 1),
+      SSA_name,
+      head};
+  return new_head;
+}
+
+static void destroy_var_mapping_untill(VarMappingList *start, VarMappingList *end)
+{
+  if (!start || start == end)
+    return;
+  VarMappingList *next = start->next;
+  free(start->var_name);
+  free(start);
+  return destroy_var_mapping_untill(next, end);
+}
+
+static SSAValName get_var(VarMappingList *mapping, const char *name)
+{
+  if (!mapping)
+    return SSA_INVALID_VAL;
+  if (!strcmp(name, mapping->var_name))
+    return mapping->SSA_name;
+  return get_var(mapping->next, name);
+}
 
 static int is_constexpr(const char *func)
 {
@@ -41,7 +65,7 @@ static int is_constexpr(const char *func)
   }
 }
 
-SSAValName compile_expr(AST *expr, HTable *vars, HTable *funcs, SSAModule *module, SSAFuncName fn, SSABasicBlockName *active_BB)
+SSAValName compile_expr(AST *expr, VarMappingList *vars, HTable *funcs, SSAModule *module, SSAFuncName fn, SSABasicBlockName *active_BB)
 {
   if (!expr)
     return SSA_INVALID_VAL;
@@ -52,10 +76,9 @@ SSAValName compile_expr(AST *expr, HTable *vars, HTable *funcs, SSAModule *modul
   }
   else if (expr->type == NAME)
   {
-    SSAValName val_name;
-    if (!ht_get(vars, expr->value, (void **)&val_name))
+    SSAValName val_name = get_var(vars, expr->value);
+    if (val_name == SSA_INVALID_VAL)
       return fprintf(stderr, "Fatal: usage of undevined variable '%s'.\n", expr->value), SSA_INVALID_VAL;
-
     return val_name;
   }
   else if (expr->type == CONST_STR)
@@ -64,15 +87,19 @@ SSAValName compile_expr(AST *expr, HTable *vars, HTable *funcs, SSAModule *modul
   // else SEXP
   STR_MATCH(GET_OP(expr))
   STR_CASE("let")
+  VarMappingList *parent_namespace = vars;
   for (AST *decl_list = SECOND(expr); decl_list; decl_list = CDR(decl_list))
   {
     AST *decl = CAR(decl_list);
     const char *var_name = FIRST(decl)->value;
     AST *var_value = SECOND(decl);
     SSAValName var_SSA_name = compile_expr(var_value, vars, funcs, module, fn, active_BB);
-    ht_set(vars, var_name, (void *)(size_t)var_SSA_name);
+
+    vars = add_var(vars, var_name, var_SSA_name);
   }
-  return compile_expr(THIRD(expr), vars, funcs, module, fn, active_BB);
+  SSAValName result = compile_expr(THIRD(expr), vars, funcs, module, fn, active_BB);
+  destroy_var_mapping_untill(vars, parent_namespace);
+  return result;
   STR_CASE("cond")
   SSABasicBlockName result_BB = new_BB(module, fn, 0, 0);
   PhiList *result_list = NULL;
@@ -97,16 +124,16 @@ SSAValName compile_expr(AST *expr, HTable *vars, HTable *funcs, SSAModule *modul
   *active_BB = result_BB;
   return emit_phi_assign(module, fn, *active_BB, result_list);
 
-  STR_DEFAULT  
+  STR_DEFAULT
   ArgList *args = NULL;
   for (AST *arg_list = CDR(expr); arg_list; arg_list = CDR(arg_list))
   {
     ArgList_append(&args, compile_expr(CAR(arg_list), vars, funcs, module, fn, active_BB));
   }
-  SSAFuncName calee;
+  int64_t calee;
   if (!ht_get(funcs, GET_OP(expr), (void **)&calee))
     return fprintf(stderr, "Fatal: usage of undefined function '%s'.\n", GET_OP(expr)), SSA_INVALID_VAL;
-  return emit_call_assign(module, fn, *active_BB, calee, args, is_constexpr(GET_OP(expr)));
+  return emit_call_assign(module, fn, *active_BB, (SSAFuncName)calee, args, is_constexpr(GET_OP(expr)));
   STR_MATCH_END
 }
 
@@ -115,8 +142,7 @@ SSAModule *build_program(AST *program)
   if (!program)
     return fprintf(stderr, "Fatal: no program.\n"), NULL;
 
-  HTable *vars, *funcs;
-  vars = ht_init(0);
+  HTable *funcs;
   funcs = ht_init(0);
 
   SSAModule *module = new_module();
@@ -136,11 +162,10 @@ SSAModule *build_program(AST *program)
   entry_block = new_BB(module, fn, 1, 0);
   exit_block = new_BB(module, fn, 0, 1);
   active_block = entry_block;
-  SSAValName result = compile_expr(CAR(CAR(program)), vars, funcs, module, fn, &active_block);
+  SSAValName result = compile_expr(CAR(CAR(program)), NULL, funcs, module, fn, &active_block);
   emit_goto(module, fn, active_block, exit_block);
   emit_return(module, fn, exit_block, result);
 
-  ht_destroy(vars);
   ht_destroy(funcs);
 
   return module;
