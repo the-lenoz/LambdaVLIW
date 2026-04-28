@@ -1,5 +1,4 @@
-all: test
+all: htable.o
 
-test: test.o htable.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
+clean:
+	rm -f *.o

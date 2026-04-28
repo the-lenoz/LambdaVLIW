@@ -1,7 +1,6 @@
 #include "../SSA/SSA.h"
 #include "../SSA/SSA_dump_graphviz.h"
 #include "../SSA/SSA_to_L_tri_call.h"
-#include "../htable/hash_helper.h"
 #include "../htable/htable.h"
 #include "../parser/parser.h"
 #include <stdint.h>
@@ -108,8 +107,8 @@ SSAModule *build_program(AST *program)
     return fprintf(stderr, "Fatal: no program.\n"), NULL;
 
   HTable *vars, *funcs;
-  vars = ht_init(str_hash, str_eq, str_k_dup, int_v_dup, free_str, 0);
-  funcs = ht_init(str_hash, str_eq, str_k_dup, int_v_dup, free_str, 0);
+  vars = ht_init(0);
+  funcs = ht_init(0);
 
   SSAModule *module = new_module();
 
