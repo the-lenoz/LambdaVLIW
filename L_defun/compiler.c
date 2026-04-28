@@ -10,6 +10,18 @@
 
 #define MAX_TMP_VAR_NAME_LEN 31
 
+typedef struct _vm_list
+{
+  char *var_name;
+  SSAValName SSA_name;
+  struct _vm_list *next;
+} VarMappingList;
+
+static VarMappingList *add_var(const VarMappingList *head)
+{
+  return NULL;
+}    
+
 static int is_constexpr(const char *func)
 {
   if (!func)
@@ -63,7 +75,7 @@ SSAValName compile_expr(AST *expr, HTable *vars, HTable *funcs, SSAModule *modul
   return compile_expr(THIRD(expr), vars, funcs, module, fn, active_BB);
   STR_CASE("cond")
   SSABasicBlockName result_BB = new_BB(module, fn, 0, 0);
-  PhiList *result_list = new_PhiList(module, fn, result_BB);
+  PhiList *result_list = NULL;
   for (AST *options_list = CDR(expr); options_list; options_list = CDR(options_list))
   {
     AST *option = CAR(options_list);
@@ -77,23 +89,20 @@ SSAValName compile_expr(AST *expr, HTable *vars, HTable *funcs, SSAModule *modul
     *active_BB = true_BB;
     SSAValName true_result = compile_expr(then, vars, funcs, module, fn, active_BB);
     emit_goto(module, fn, *active_BB, result_BB);
-    PhiList_append(result_list, (PhiPair){*active_BB, true_result});
+    PhiList_append(&result_list, (PhiPair){*active_BB, true_result});
     *active_BB = next_BB;
   }
   emit_goto(module, fn, *active_BB, result_BB);
-  PhiList_append(result_list, (PhiPair){*active_BB, SSA_VAL_VOID}); /*If there's no true case in cond*/
+  PhiList_append(&result_list, (PhiPair){*active_BB, SSA_VAL_VOID}); /*If there's no true case in cond*/
   *active_BB = result_BB;
   return emit_phi_assign(module, fn, *active_BB, result_list);
 
-  STR_DEFAULT
-  SSABasicBlockName result_BB = new_BB(module, fn, 0, 0);
-  ArgList *args = new_ArgList(module, fn, result_BB);
+  STR_DEFAULT  
+  ArgList *args = NULL;
   for (AST *arg_list = CDR(expr); arg_list; arg_list = CDR(arg_list))
   {
-    ArgList_append(args, compile_expr(CAR(arg_list), vars, funcs, module, fn, active_BB));
+    ArgList_append(&args, compile_expr(CAR(arg_list), vars, funcs, module, fn, active_BB));
   }
-  emit_goto(module, fn, *active_BB, result_BB);
-  *active_BB = result_BB;
   SSAFuncName calee;
   if (!ht_get(funcs, GET_OP(expr), (void **)&calee))
     return fprintf(stderr, "Fatal: usage of undefined function '%s'.\n", GET_OP(expr)), SSA_INVALID_VAL;

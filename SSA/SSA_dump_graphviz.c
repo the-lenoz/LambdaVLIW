@@ -97,16 +97,11 @@ static int gv_print_arg_list(FILE *out_fp, const ArgList *args)
 {
   int printed_any = 0;
 
-  if (!args)
-    return -1;
-
   if (fputc('(', out_fp) == EOF)
     return -1;
 
   for (const ArgList *it = args; it; it = it->next)
   {
-    if (!printed_any && it->name == SSA_INVALID_VAL && it->next == NULL)
-      break;
     if (it->name == SSA_INVALID_VAL)
       return -1;
 
@@ -125,19 +120,12 @@ static int gv_print_arg_list(FILE *out_fp, const ArgList *args)
 static int gv_print_phi_options(FILE *out_fp, const PhiList *options)
 {
   int printed_any = 0;
-
-  if (!options)
-    return -1;
-
+  
   if (fputc('(', out_fp) == EOF)
     return -1;
 
   for (const PhiList *it = options; it; it = it->next)
   {
-    if (!printed_any && it->pair.previous_block_name == SSA_INVALID_BB &&
-        it->pair.value_name == SSA_INVALID_VAL && it->next == NULL)
-      break;
-
     if (it->pair.previous_block_name == SSA_INVALID_BB || it->pair.value_name == SSA_INVALID_VAL)
       return -1;
 

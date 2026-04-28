@@ -131,10 +131,7 @@ int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SS
 int emit_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSABasicBlockName dst);
 int emit_return(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName ret_name);
 
-PhiList *new_PhiList(SSAModule *module, SSAFuncName func, SSABasicBlockName BB);
-ArgList *new_ArgList(SSAModule *module, SSAFuncName func, SSABasicBlockName BB);
-
-int PhiList_append(PhiList *list, PhiPair pair);
-int ArgList_append(ArgList *list, SSAValName arg_name);
+int PhiList_append(PhiList **list, PhiPair pair);
+int ArgList_append(ArgList **list, SSAValName arg_name);
 
 #endif

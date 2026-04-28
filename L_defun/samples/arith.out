@@ -17,34 +17,19 @@
     (bb0
     (let v0 1)
     (let v1 2)
-    (goto bb3)
-    )
-    (bb1
-    (return v10)
-    )
-    (bb2
-    (let v10 (call + v2 v9))
-    (goto bb1)
-    )
-    (bb3
     (let v3 123123123)
     (let v4 12321)
     (let v5 21)
     (let v6 10)
     (let v2 (call * v0 v1))
-    (goto bb6)
-    )
-    (bb4
-    (let v9 (call - v3 v8))
-    (goto bb2)
-    )
-    (bb5
-    (let v8 (call / v4 v7))
-    (goto bb4)
-    )
-    (bb6
     (let v7 (call - v5 v6))
-    (goto bb5)
+    (let v8 (call / v4 v7))
+    (let v9 (call - v3 v8))
+    (let v10 (call + v2 v9))
+    (goto bb1)
+    )
+    (bb1
+    (return v10)
     )
   )
 )

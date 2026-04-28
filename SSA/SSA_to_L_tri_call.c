@@ -21,20 +21,12 @@ static int dump_print_bb_name(FILE *out_fp, SSABasicBlockName bb)
 
 static int dump_print_args(FILE *out_fp, const ArgList *args)
 {
-  int printed_any = 0;
-
-  if (!args)
-    return -1;
-
   for (const ArgList *it = args; it; it = it->next)
   {
-    if (!printed_any && it->name == SSA_INVALID_VAL && it->next == NULL)
-      return 0;
     if (it->name == SSA_INVALID_VAL)
       return -1;
     if (fprintf(out_fp, " ") < 0 || dump_print_val_name(out_fp, it->name) < 0)
       return -1;
-    printed_any = 1;
   }
 
   return 0;
@@ -42,20 +34,11 @@ static int dump_print_args(FILE *out_fp, const ArgList *args)
 
 static int dump_print_phi(FILE *out_fp, const PhiList *options)
 {
-  int printed_any = 0;
-
-  if (!options)
-    return -1;
-
   if (fprintf(out_fp, "(phi") < 0)
     return -1;
 
   for (const PhiList *it = options; it; it = it->next)
   {
-    if (!printed_any && it->pair.previous_block_name == SSA_INVALID_BB &&
-        it->pair.value_name == SSA_INVALID_VAL && it->next == NULL)
-      break;
-
     if (it->pair.previous_block_name == SSA_INVALID_BB || it->pair.value_name == SSA_INVALID_VAL)
       return -1;
 
@@ -63,12 +46,7 @@ static int dump_print_phi(FILE *out_fp, const PhiList *options)
         fprintf(out_fp, " ") < 0 || dump_print_val_name(out_fp, it->pair.value_name) < 0 ||
         fprintf(out_fp, ")") < 0)
       return -1;
-
-    printed_any = 1;
   }
-
-  if (!printed_any)
-    return -1;
 
   return fprintf(out_fp, ")") < 0 ? -1 : 0;
 }

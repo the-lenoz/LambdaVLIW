@@ -5,22 +5,6 @@
 
 #define BASIC_ARRAY_SIZE 64
 
-typedef enum
-{
-  OWNED_LIST_PHI,
-  OWNED_LIST_ARG
-} OwnedListKind;
-
-typedef struct _OwnedList
-{
-  SSAModule *owner;
-  void *list;
-  OwnedListKind kind;
-  struct _OwnedList *next;
-} OwnedList;
-
-static OwnedList *owned_lists = NULL;
-
 static int ensure_array_capacity(void **arr, unsigned int *cap, size_t elem_size, unsigned int min_elems)
 {
   unsigned int new_cap;
@@ -85,71 +69,34 @@ static int bb_has_terminator(const SSAFunc *func, SSABasicBlockName bb)
 
 static void destroy_phi_list(PhiList *list)
 {
-  while (list)
-  {
-    PhiList *next = list->next;
-    free(list);
-    list = next;
-  }
+  if (!list)
+    return;
+  PhiList *next = list->next;
+  free(list);
+  return destroy_phi_list(next);
 }
 
 static void destroy_arg_list(ArgList *list)
 {
-  while (list)
-  {
-    ArgList *next = list->next;
-    free(list);
-    list = next;
-  }
-}
-
-static int register_owned_list(SSAModule *module, void *list, OwnedListKind kind)
-{
-  OwnedList *node;
-
-  if (!module || !list)
-    return -1;
-
-  node = (OwnedList *)malloc(sizeof(OwnedList));
-  if (!node)
-    return -1;
-
-  node->owner = module;
-  node->list = list;
-  node->kind = kind;
-  node->next = owned_lists;
-  owned_lists = node;
-
-  return 0;
-}
-
-static void destroy_owned_lists_for_module(SSAModule *module)
-{
-  OwnedList **slot = &owned_lists;
-
-  while (*slot)
-  {
-    OwnedList *current = *slot;
-    if (current->owner != module)
-    {
-      slot = &current->next;
-      continue;
-    }
-
-    if (current->kind == OWNED_LIST_PHI)
-      destroy_phi_list((PhiList *)current->list);
-    else
-      destroy_arg_list((ArgList *)current->list);
-
-    *slot = current->next;
-    free(current);
-  }
+  if (!list)
+    return;
+  ArgList *next = list->next;
+  free(list);
+  return destroy_arg_list(next);
 }
 
 static void destroy_func(SSAFunc *func)
 {
   if (!func)
     return;
+
+  for (int i = 0; i < func->values_count; ++i)
+  {
+    if (func->values[i].type == SSA_VALUE_CALL)
+      destroy_arg_list(func->values[i].expr.call.args);
+    else if (func->values[i].type == SSA_VALUE_PHI)
+      destroy_phi_list(func->values[i].expr.phi.options);
+  }
 
   free(func->name);
   free(func->values);
@@ -198,8 +145,6 @@ void destroy_module(SSAModule *module)
 
   for (i = 0; i < module->functions_count; ++i)
     destroy_func(&module->functions[i]);
-
-  destroy_owned_lists_for_module(module);
 
   free(module->functions);
   *module = (SSAModule){};
@@ -297,7 +242,7 @@ SSAValName emit_phi_assign(SSAModule *module, SSAFuncName func, SSABasicBlockNam
   SSAFunc *function = get_func(module, func);
   SSAValue value;
 
-  if (!function || !is_valid_bb(function, BB) || !phi_list)
+  if (!function || !is_valid_bb(function, BB))
     return SSA_INVALID_VAL;
 
   value = (SSAValue){};
@@ -315,7 +260,7 @@ SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
   SSAFunc *function = get_func(module, func);
   SSAValue value;
 
-  if (!function || !is_valid_bb(function, BB) || !arg_list)
+  if (!function || !is_valid_bb(function, BB))
     return SSA_INVALID_VAL;
   if (!get_func(module, callee))
     return SSA_INVALID_VAL;
@@ -416,105 +361,29 @@ int emit_return(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAVa
   return 0;
 }
 
-PhiList *new_PhiList(SSAModule *module, SSAFuncName func, SSABasicBlockName BB)
+int PhiList_append(PhiList **list, PhiPair pair)
 {
-  SSAFunc *function = get_func(module, func);
-  PhiList *list;
-
-  (void)BB;
-
-  if (!function)
-    return NULL;
-
-  list = (PhiList *)calloc(1, sizeof(PhiList));
-  if (!list)
-    return NULL;
-
-  list->pair.previous_block_name = SSA_INVALID_BB;
-  list->pair.value_name = SSA_INVALID_VAL;
-
-  if (register_owned_list(module, list, OWNED_LIST_PHI) < 0)
-  {
-    free(list);
-    return NULL;
-  }
-
-  return list;
-}
-
-ArgList *new_ArgList(SSAModule *module, SSAFuncName func, SSABasicBlockName BB)
-{
-  SSAFunc *function = get_func(module, func);
-  ArgList *list;
-
-  (void)BB;
-
-  if (!function)
-    return NULL;
-
-  list = (ArgList *)calloc(1, sizeof(ArgList));
-  if (!list)
-    return NULL;
-
-  list->name = SSA_INVALID_VAL;
-
-  if (register_owned_list(module, list, OWNED_LIST_ARG) < 0)
-  {
-    free(list);
-    return NULL;
-  }
-
-  return list;
-}
-
-int PhiList_append(PhiList *list, PhiPair pair)
-{
-  PhiList *cur;
-
   if (!list)
     return -1;
 
-  if (list->pair.previous_block_name == SSA_INVALID_BB &&
-      list->pair.value_name == SSA_INVALID_VAL &&
-      list->next == NULL)
-  {
-    list->pair = pair;
-    return 0;
-  }
+  PhiList *new_head = malloc(sizeof(PhiList));
+  *new_head = (PhiList){pair, *list};
+  *list = new_head;
 
-  cur = list;
-  while (cur->next)
-    cur = cur->next;
-
-  cur->next = (PhiList *)calloc(1, sizeof(PhiList));
-  if (!cur->next)
-    return -1;
-
-  cur->next->pair = pair;
   return 0;
 }
 
-int ArgList_append(ArgList *list, SSAValName arg_name)
+int ArgList_append(ArgList **list, SSAValName arg_name)
 {
-  ArgList *cur;
-
   if (!list)
     return -1;
 
-  if (list->name == SSA_INVALID_VAL && list->next == NULL)
+  if (!*list)
   {
-    list->name = arg_name;
+    *list = malloc(sizeof(ArgList));
+    **list = (ArgList){arg_name, NULL};
     return 0;
   }
 
-  cur = list;
-  while (cur->next)
-    cur = cur->next;
-
-  cur->next = (ArgList *)calloc(1, sizeof(ArgList));
-  if (!cur->next)
-    return -1;
-
-  cur->next->name = arg_name;
-  return 0;
+  return ArgList_append(&(*list)->next, arg_name);
 }

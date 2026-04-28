@@ -83,8 +83,7 @@ static int test_simple_call_and_return(void)
   TEST_ASSERT(caller_fn->entry_block == bb_entry);
   TEST_ASSERT(caller_fn->exit_block == bb_exit);
 
-  args = new_ArgList(module, caller, bb_entry);
-  TEST_ASSERT(args != NULL);
+  args = NULL;
 
   call_val = emit_call_assign(module, caller, bb_entry, callee, args, 1);
   TEST_ASSERT(call_val != SSA_INVALID_VAL);
@@ -159,8 +158,7 @@ static int test_branch_and_phi(void)
 
   main_fn = &module->functions[main_fn_name];
 
-  args_cond = new_ArgList(module, main_fn_name, bb_entry);
-  TEST_ASSERT(args_cond != NULL);
+  args_cond = NULL;
   cond_val = emit_call_assign(module, main_fn_name, bb_entry, cond_fn, args_cond, 0);
   TEST_ASSERT(cond_val != SSA_INVALID_VAL);
 
@@ -170,23 +168,20 @@ static int test_branch_and_phi(void)
   TEST_ASSERT(main_fn->basic_blocks[bb_entry].terminator.true_dst == bb_true);
   TEST_ASSERT(main_fn->basic_blocks[bb_entry].terminator.false_dst == bb_false);
 
-  args_true = new_ArgList(module, main_fn_name, bb_true);
-  TEST_ASSERT(args_true != NULL);
-  TEST_ASSERT(ArgList_append(args_true, cond_val) == 0);
+  args_true = NULL;
+  TEST_ASSERT(ArgList_append(&args_true, cond_val) == 0);
   true_val = emit_call_assign(module, main_fn_name, bb_true, calc_fn, args_true, 0);
   TEST_ASSERT(true_val != SSA_INVALID_VAL);
   TEST_ASSERT(emit_goto(module, main_fn_name, bb_true, bb_merge) == 0);
 
-  args_false = new_ArgList(module, main_fn_name, bb_false);
-  TEST_ASSERT(args_false != NULL);
+  args_false = NULL;
   false_val = emit_call_assign(module, main_fn_name, bb_false, calc_fn, args_false, 0);
   TEST_ASSERT(false_val != SSA_INVALID_VAL);
   TEST_ASSERT(emit_goto(module, main_fn_name, bb_false, bb_merge) == 0);
 
-  phi = new_PhiList(module, main_fn_name, bb_merge);
-  TEST_ASSERT(phi != NULL);
-  TEST_ASSERT(PhiList_append(phi, (PhiPair){.previous_block_name = bb_true, .value_name = true_val}) == 0);
-  TEST_ASSERT(PhiList_append(phi, (PhiPair){.previous_block_name = bb_false, .value_name = false_val}) == 0);
+  phi = NULL;
+  TEST_ASSERT(PhiList_append(&phi, (PhiPair){.previous_block_name = bb_true, .value_name = true_val}) == 0);
+  TEST_ASSERT(PhiList_append(&phi, (PhiPair){.previous_block_name = bb_false, .value_name = false_val}) == 0);
 
   phi_val = emit_phi_assign(module, main_fn_name, bb_merge, phi);
   TEST_ASSERT(phi_val != SSA_INVALID_VAL);
@@ -233,8 +228,7 @@ static int test_invalid_inputs(void)
   TEST_ASSERT(new_BB(module, fn, 1, 0) == SSA_INVALID_BB);
   TEST_ASSERT(new_BB(module, fn, 0, 1) == SSA_INVALID_BB);
 
-  args = new_ArgList(module, fn, bb_entry);
-  TEST_ASSERT(args != NULL);
+  args = NULL;
 
   TEST_ASSERT(emit_call_assign(module, fn, bb_entry, SSA_INVALID_FUNC, args, 0) == SSA_INVALID_VAL);
   TEST_ASSERT(emit_cond_goto(module, fn, bb_entry, SSA_INVALID_VAL, bb_entry, bb_exit) < 0);
