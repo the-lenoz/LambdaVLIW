@@ -197,6 +197,9 @@ SSAFuncName new_func(SSAModule *module, const char *name, unsigned int args_coun
     return SSA_INVALID_FUNC;
   }
 
+  for (unsigned int i = 0; i < args_count; ++i)
+    func->arg_SSA_names[i] = i;    
+
   func->basic_blocks_cap = BASIC_ARRAY_SIZE;
   func->basic_blocks = (SSABasicBlock *)calloc(func->basic_blocks_cap, sizeof(SSABasicBlock));
   if (!func->basic_blocks)
