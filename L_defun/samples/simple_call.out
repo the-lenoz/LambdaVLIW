@@ -1,0 +1,34 @@
+(
+  (func + v0 v1
+  )
+  (func - v0 v1
+  )
+  (func * v0 v1
+  )
+  (func / v0 v1
+  )
+  (func > v0 v1
+  )
+  (func < v0 v1
+  )
+  (func = v0 v1
+  )
+  (func test
+    (bb0
+    (let v0 123)
+    (goto bb1)
+    )
+    (bb1
+    (return v0)
+    )
+  )
+  (func main
+    (bb0
+    (let v0 (call test))
+    (goto bb1)
+    )
+    (bb1
+    (return v0)
+    )
+  )
+)

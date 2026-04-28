@@ -21,7 +21,7 @@ static VarMappingList *add_var(VarMappingList *head, const char *name, SSAValNam
 {
   VarMappingList *new_head = malloc(sizeof(VarMappingList));
   *new_head = (VarMappingList){
-    strdup(name),
+      strdup(name),
       SSA_name,
       head};
   return new_head;
@@ -29,10 +29,10 @@ static VarMappingList *add_var(VarMappingList *head, const char *name, SSAValNam
 
 static int AST_list_len(AST *l)
 {
-  if (!l)
+  if (!l || !CAR(l))
     return 0;
   return 1 + AST_list_len(CDR(l));
-}    
+}
 
 static void destroy_var_mapping_untill(VarMappingList *start, VarMappingList *end)
 {
@@ -72,7 +72,8 @@ static int is_constexpr(const char *func)
   }
 }
 
-SSAValName compile_expr(AST *expr, VarMappingList *vars, HTable *funcs, SSAModule *module, SSAFuncName fn, SSABasicBlockName *active_BB)
+SSAValName compile_expr(AST *expr, VarMappingList *vars, HTable *funcs,
+                        SSAModule *module, SSAFuncName fn, SSABasicBlockName *active_BB)
 {
   if (!expr)
     return SSA_INVALID_VAL;
@@ -151,8 +152,22 @@ SSAFuncName build_function(AST *definition, SSAModule *module, HTable *funcs)
   const char *name = SECOND(definition)->value;
   AST *arg_list = THIRD(definition);
   AST *body = THIRD(CDR(definition)); // FOURTH
-  
+
   SSAFuncName func = new_func(module, name, AST_list_len(arg_list), 1);
+  ht_set(funcs, name, (void *)(size_t)func);
+
+  SSABasicBlockName entry_block, exit_block, active_block;
+  entry_block = new_BB(module, func, 1, 0);
+  exit_block = new_BB(module, func, 0, 1);
+  active_block = entry_block;
+  VarMappingList *locals = NULL;
+  for (int i = 0; arg_list && CAR(arg_list); arg_list = CDR(arg_list), ++i)
+    locals = add_var(locals, CAR(arg_list)->value, get_arg_val_name(module, func, i));
+  SSAValName result = compile_expr(body, locals, funcs, module, func, &active_block);
+  emit_goto(module, func, active_block, exit_block);
+  emit_return(module, func, exit_block, result);
+
+  return func;
 }
 
 SSAModule *build_program(AST *program)
@@ -175,14 +190,17 @@ SSAModule *build_program(AST *program)
   DECLARE_BIN_FUNC_STUB("=");
 #undef DECLARE_BIN_FUNC_STUB
 
-  SSAFuncName fn = new_func(module, "main", 0, 1);
-  SSABasicBlockName entry_block, exit_block, active_block;
-  entry_block = new_BB(module, fn, 1, 0);
-  exit_block = new_BB(module, fn, 0, 1);
-  active_block = entry_block;
-  SSAValName result = compile_expr(CAR(CAR(program)), NULL, funcs, module, fn, &active_block);
-  emit_goto(module, fn, active_block, exit_block);
-  emit_return(module, fn, exit_block, result);
+  for (AST *code_blocks = CAR(program); code_blocks; code_blocks = CDR(code_blocks))
+  {
+    AST *stmt = CAR(code_blocks);
+    if (stmt->type != SEXP || strcmp(GET_OP(stmt), "defun"))
+    {
+      ht_destroy(funcs);
+      return fprintf(stderr, "Fatal: only defun is supported in global namespace, got '%s'.\n",
+                     GET_OP(stmt)), NULL;
+    }
+    build_function(stmt, module, funcs);
+  }
 
   ht_destroy(funcs);
 

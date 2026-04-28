@@ -128,7 +128,7 @@ SSABasicBlockName new_BB(SSAModule *module, SSAFuncName func, int is_entry, int 
 SSAValName emit_phi_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, PhiList *phi_list);
 SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
                             SSABasicBlockName BB, SSAFuncName callee, ArgList *arg_list, int is_constexpr);
-SSAValName get_arg_val_name(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, unsigned int arg_index);
+SSAValName get_arg_val_name(SSAModule *module, SSAFuncName func, unsigned int arg_index);
 SSAValName emit_const_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, int value);
 
 int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName cond_name,

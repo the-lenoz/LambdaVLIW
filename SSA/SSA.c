@@ -101,6 +101,7 @@ static void destroy_func(SSAFunc *func)
   free(func->name);
   free(func->values);
   free(func->basic_blocks);
+  free(func->arg_SSA_names);
   *func = (SSAFunc){};
 }
 
@@ -290,10 +291,9 @@ SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
   return append_value(function, value);
 }
 
-SSAValName get_arg_val_name(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, unsigned int arg_index)
+SSAValName get_arg_val_name(SSAModule *module, SSAFuncName func, unsigned int arg_index)
 {
-  if (!module || func >= module->functions_count || BB >= module->functions[func].basic_blocks_count ||
-      arg_index >= module->functions[func].args_count)
+  if (!module || func >= module->functions_count || arg_index >= module->functions[func].args_count)
     return SSA_INVALID_VAL;
 
   return module->functions[func].arg_SSA_names[arg_index];

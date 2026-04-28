@@ -1,17 +1,17 @@
 (
-  (func +
+  (func + v0 v1
   )
-  (func -
+  (func - v0 v1
   )
-  (func *
+  (func * v0 v1
   )
-  (func /
+  (func / v0 v1
   )
-  (func >
+  (func > v0 v1
   )
-  (func <
+  (func < v0 v1
   )
-  (func =
+  (func = v0 v1
   )
   (func main
     (bb0
