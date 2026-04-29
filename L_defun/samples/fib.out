@@ -13,7 +13,7 @@
   )
   (func = v0 v1
   )
-  (func fib-recursive v0 v1 v2
+  (func fib_recursive v0 v1 v2
     (bb0
     (let v3 0)
     (let v4 (call = v0 v3))
@@ -37,14 +37,14 @@
     (let v6 1)
     (let v7 (call - v0 v6))
     (let v8 (call + v1 v2))
-    (let v9 (call fib-recursive v7 v2 v8))
+    (let v9 (call fib_recursive v7 v2 v8))
     (goto bb2)
     )
     (bb6
     (goto bb2)
     )
   )
-  (func calculate-fib v0
+  (func calculate_fib v0
     (bb0
     (let v1 0)
     (let v2 (call = v0 v1))
@@ -68,14 +68,14 @@
     (bb5
     (let v5 0)
     (let v6 1)
-    (let v7 (call fib-recursive v0 v5 v6))
+    (let v7 (call fib_recursive v0 v5 v6))
     (goto bb2)
     )
     (bb6
     (goto bb2)
     )
   )
-  (func sum-fib-range v0 v1
+  (func sum_fib_range v0 v1
     (bb0
     (let v2 0)
     (let v3 (call = v0 v2))
@@ -98,9 +98,9 @@
     (bb5
     (let v5 1)
     (let v6 (call - v0 v5))
-    (let v7 (call calculate-fib v0))
+    (let v7 (call calculate_fib v0))
     (let v8 (call + v1 v7))
-    (let v9 (call sum-fib-range v6 v8))
+    (let v9 (call sum_fib_range v6 v8))
     (goto bb2)
     )
     (bb6
@@ -109,9 +109,9 @@
   )
   (func main
     (bb0
-    (let v0 9)
+    (let v0 300)
     (let v1 0)
-    (let v2 (call sum-fib-range v0 v1))
+    (let v2 (call sum_fib_range v0 v1))
     (goto bb1)
     )
     (bb1

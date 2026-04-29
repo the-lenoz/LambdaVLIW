@@ -30,6 +30,10 @@ typedef struct _ArgList
   struct _ArgList *next;
 } ArgList;
 
+#define ARG_FIRST(args) (args)->name
+#define ARG_SECOND(args) (args)->next->name
+#define ARG_THIRD(args) (args)->next->next->name
+
 typedef struct
 {
   SSAFuncName calee_name;

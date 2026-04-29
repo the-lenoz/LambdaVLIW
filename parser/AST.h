@@ -2,6 +2,7 @@
 #define AST_D
 
 #include <stdio.h>
+#include <string.h>
 
 #define CAR(x) ((x)->lchild)
 #define CDR(x) ((x)->rchild)
