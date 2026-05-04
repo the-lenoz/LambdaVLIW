@@ -78,7 +78,9 @@ SSAValName compile_expr(AST *expr, VarMappingList *vars, HTable *funcs,
     return SSA_INVALID_VAL;
   if (expr->type == CONST_NUM)
   {
-    SSAValName const_val_name = emit_const_assign(module, fn, *active_BB, atoi(expr->value));
+    int64_t val;
+    sscanf(expr->value, "%ld", &val);
+    SSAValName const_val_name = emit_const_assign(module, fn, *active_BB, val);
     return const_val_name;
   }
   else if (expr->type == NAME)
@@ -163,6 +165,7 @@ SSAFuncName build_function(AST *definition, SSAModule *module, HTable *funcs)
   for (int i = 0; arg_list && CAR(arg_list); arg_list = CDR(arg_list), ++i)
     locals = add_var(locals, CAR(arg_list)->value, get_arg_val_name(module, func, i));
   SSAValName result = compile_expr(body, locals, funcs, module, func, &active_block);
+  destroy_var_mapping_untill(locals, NULL);
   emit_goto(module, func, active_block, exit_block);
   emit_return(module, func, exit_block, result);
 
@@ -187,8 +190,15 @@ SSAModule *build_program(AST *program)
   DECLARE_BIN_FUNC_STUB(">");
   DECLARE_BIN_FUNC_STUB("<");
   DECLARE_BIN_FUNC_STUB("=");
+  DECLARE_BIN_FUNC_STUB("cons");
 #undef DECLARE_BIN_FUNC_STUB
 
+  #define DECLARE_UN_FUNC_STUB(name) ht_set(funcs, name, (void *)(size_t)new_func(module, name, 1, 0))
+  DECLARE_UN_FUNC_STUB("print_int");
+  DECLARE_UN_FUNC_STUB("car");
+  DECLARE_UN_FUNC_STUB("cdr");
+  #undef DELCARE_UN_FUNC_STUB
+  
   for (AST *code_blocks = CAR(program); code_blocks; code_blocks = CDR(code_blocks))
   {
     AST *stmt = CAR(code_blocks);

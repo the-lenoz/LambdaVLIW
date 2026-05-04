@@ -1,5 +1,6 @@
 #include "SSA.h"
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -302,7 +303,7 @@ SSAValName get_arg_val_name(SSAModule *module, SSAFuncName func, unsigned int ar
   return module->functions[func].arg_SSA_names[arg_index];
 }
 
-SSAValName emit_const_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, int value)
+SSAValName emit_const_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, int64_t value)
 {
   SSAFunc *function = get_func(module, func);
   SSAValue ssa_value;

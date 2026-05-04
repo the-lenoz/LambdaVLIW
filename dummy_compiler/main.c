@@ -20,6 +20,7 @@ int compile(const char *source_path, const char *out_path)
     return fprintf(stderr, "Fatal: syntax error.\n"), fclose(out_fp), -1;
 
   SSAModule *module = build_program(program);
+  D_AST(program);
   if (!module)
     return fprintf(stderr, "Fatal: semanthic error.\n"), fclose(out_fp), -1;
 
@@ -28,7 +29,8 @@ int compile(const char *source_path, const char *out_path)
     fclose(out_fp);
     fprintf(stderr, "Fatal: invalid SSA produced.\n");
     return -1;
-  }    
+  }
+  destroy_module(module);
   
   fclose(out_fp);  
   return 0;

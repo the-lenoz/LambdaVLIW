@@ -76,6 +76,7 @@ int dummy_do_phi(FILE *fp, SSAFunc *fn, SSABasicBlockName src_BB, SSABasicBlockN
       fprintf(fp, "v%d = __swp_v%d;\n", i, i);
     }
   }
+  free(used_vals_mask);
   return 1;
 }
 
@@ -84,24 +85,77 @@ int dummy_SSA_module_to_C(SSAModule *module, FILE *fp)
   if (!module || !fp)
     return 0;
 
-  fprintf(fp, "#include <stdio.h>\n\n\n");
+  fprintf(fp, "#include <stdio.h>\n#include <stdint.h>\n#include <malloc.h>\n\n\n");
+  fprintf(fp, "int64_t print_int(int64_t n) {return printf(\"%%ld\\n\", n), n;}\n\n\n");
+  fprintf(fp,
+          "struct __gcdata {int64_t item; struct __gcdata *next;};\n"
+          "struct __pair {int64_t _car; int64_t _cdr;};\n"
+          "struct __gcdata *__GC = NULL;\n"
+          "\n"
+          "void __gc_add(int64_t item) {"
+          "  struct __gcdata *new_GC = malloc(sizeof(struct __gcdata));\n"
+          "  if (!new_GC) return;\n"
+          "  *new_GC = (struct __gcdata){item, __GC};\n"
+          "  __GC = new_GC;\n"
+          "}\n"
+          "void __gc_cleanup() {\n"
+          "  for (struct __gcdata *ptr = __GC, *next = ptr ? ptr->next : NULL; \n"
+          "       ptr; ptr = next, next = ptr ? ptr->next : NULL) {\n"
+          "    free((void*)(ptr->item));\n"
+          "    free(ptr);\n"
+          "  }\n"
+          "}\n"
+          "\n"
+          "int64_t cons(int64_t _car, int64_t _cdr) {\n"
+          "  int64_t result = (int64_t)malloc(sizeof(struct __pair));\n"
+          "  if (result) {\n"
+          "    *(struct __pair*)result = (struct __pair){_car, _cdr};\n"
+          "    __gc_add(result);\n"
+          "  }\n"
+          "  return result;\n"
+          "}\n"
+          "int64_t car(int64_t pair) {return pair ? ((struct __pair*)pair)->_car : pair;}\n"
+          "int64_t cdr(int64_t pair) {return pair ? ((struct __pair*)pair)->_cdr : pair;}\n"
+          "\n\n");
 
   for (SSAFunc *fn = module->functions;
        fn < module->functions + module->functions_count; ++fn)
   {
-    if (!is_c_name(fn->name)) // Skip functions with invalid for C names (e. g. arithmetic)
+    STR_MATCH(fn->name)
+    STR_CASE("print_int")
+    continue;
+    STR_CASE("cond")
+    continue;
+    STR_CASE("cons")
+    continue;
+    STR_CASE("car")
+    continue;
+    STR_CASE("cdr")
+    continue;
+    STR_CASE("malloc")
+    fprintf(stderr, "Error: libc function redeclaration is not allowed. Skipping '%s'.\n", fn->name);
+    continue;
+    STR_CASE("calloc")
+    fprintf(stderr, "Error: libc function redeclaration is not allowed. Skipping '%s'.\n", fn->name);
+    continue;
+    STR_CASE("free")
+    fprintf(stderr, "Error: libc function redeclaration is not allowed. Skipping '%s'.\n", fn->name);
+    continue;
+    STR_DEFAULT
+    if (!is_c_name(fn->name))
+      // Skip functions with invalid for C names (e. g. arithmetic)
       continue;
 
-    fprintf(fp, "int %s(", fn->name);
+    fprintf(fp, "int64_t %s(", fn->name);
     for (int i = 0; i < fn->args_count; ++i)
     {
-      fprintf(fp, "int v%d", i);
+      fprintf(fp, "int64_t v%d", i);
       if (i < fn->args_count - 1)
         fprintf(fp, ", ");
     }
     fprintf(fp, "){\n");
     for (SSAValName i = fn->args_count; i < fn->values_count; ++i)
-      fprintf(fp, "  int v%d, __swp_v%d;\n", i, i);
+      fprintf(fp, "  int64_t v%d, __swp_v%d;\n", i, i);
     fprintf(fp, "  int __next_BB = %d;\n", fn->entry_block);
     fprintf(fp, "  while (1) {\n");
     fprintf(fp, "    switch (__next_BB) {\n");
@@ -117,7 +171,7 @@ int dummy_SSA_module_to_C(SSAModule *module, FILE *fp)
         {
         case SSA_VALUE_CONST:
           fprintf(fp, "        v%d = ", j);
-          fprintf(fp, "%d;\n", fn->values[j].expr.cnst.value);
+          fprintf(fp, "%ld;\n", fn->values[j].expr.cnst.value);
           break;
         case SSA_VALUE_CALL:
           fprintf(fp, "        v%d = ", j);
@@ -150,6 +204,8 @@ int dummy_SSA_module_to_C(SSAModule *module, FILE *fp)
       switch (fn->basic_blocks[i].terminator.type)
       {
       case SSA_TERM_RETURN:
+        if (!strcmp(fn->name, "main"))
+          fprintf(fp, "        __gc_cleanup();\n");
         fprintf(fp, "        return v%d;\n", fn->basic_blocks[i].terminator.ret_val);
         break;
       case SSA_TERM_NONE:
@@ -168,8 +224,8 @@ int dummy_SSA_module_to_C(SSAModule *module, FILE *fp)
       }
       fprintf(fp, "        break;\n");
     }
-
     fprintf(fp, "    }\n  }\n  return 0;\n}\n\n");
+    STR_MATCH_END
   }
   return 1;
 }

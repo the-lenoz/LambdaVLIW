@@ -1,6 +1,7 @@
 #ifndef SSA_D
 #define SSA_D
 
+#include <stdint.h>
 typedef unsigned int SSAValName;
 typedef unsigned int SSABasicBlockName;
 typedef unsigned int SSAFuncName;
@@ -42,7 +43,7 @@ typedef struct
 
 typedef struct
 {
-  int value;
+  int64_t value;
 } _ConstNode;
 
 typedef struct
@@ -133,7 +134,7 @@ SSAValName emit_phi_assign(SSAModule *module, SSAFuncName func, SSABasicBlockNam
 SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
                             SSABasicBlockName BB, SSAFuncName callee, ArgList *arg_list, int is_constexpr);
 SSAValName get_arg_val_name(SSAModule *module, SSAFuncName func, unsigned int arg_index);
-SSAValName emit_const_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, int value);
+SSAValName emit_const_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, int64_t value);
 
 int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName cond_name,
                    SSABasicBlockName true_dst, SSABasicBlockName false_dst);
