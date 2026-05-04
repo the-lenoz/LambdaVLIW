@@ -1,7 +1,7 @@
 (
   (func cond_provider
   )
-  (func calc v0
+  (func calc
   )
   (func branch_main
     (bb0
@@ -13,11 +13,11 @@
     (goto bb3)
     )
     (bb2
-    (let v2 (call calc v0))
+    (let v2 (call calc))
     (goto bb3)
     )
     (bb3
-    (let v3 (phi (bb2 v2) (bb1 v1)))
+    (let v3 (phi (bb1 v1) (bb2 v2)))
     (return v3)
     )
   )

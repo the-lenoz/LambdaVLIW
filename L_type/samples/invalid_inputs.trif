@@ -1,0 +1,12 @@
+(
+  (func invalid_case
+    (bb0
+    (let v0 (call invalid_case))
+    (if-goto v0 bb0 else bb1)
+    )
+    (bb1
+    (let v1 (call invalid_case))
+    (return v1)
+    )
+  )
+)

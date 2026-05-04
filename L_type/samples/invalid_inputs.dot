@@ -16,37 +16,21 @@ digraph SSA {
     f0_bb0 [shape=plain, margin=0, label=<
       <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#edf7ee">
         <TR><TD ALIGN="LEFT" BGCOLOR="#c8e6c9"><B>bb0 [entry]</B></TD></TR>
-        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v0 = const 7</FONT></TD></TR>
-        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">call void_sink()</FONT></TD></TR>
-        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v1 = call invalid_case()</FONT></TD></TR>
-        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">if v1 then bb0 else bb1</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v0 = call invalid_case()</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">if v0 then bb0 else bb1</FONT></TD></TR>
       </TABLE>
     >];
     f0_bb1 [shape=plain, margin=0, label=<
       <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#fff8ef">
         <TR><TD ALIGN="LEFT" BGCOLOR="#ffe0b2"><B>bb1 [exit]</B></TD></TR>
-        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v2 = call invalid_case()</FONT></TD></TR>
-        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">return v2</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v1 = call invalid_case()</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">return v1</FONT></TD></TR>
       </TABLE>
     >];
     f0_entry -> f0_bb0 [label="entry", color="#2e7d32", penwidth=1.4];
     f0_bb0 -> f0_bb0 [label="T", color="#2e7d32", penwidth=1.3];
     f0_bb0 -> f0_bb1 [label="F", color="#c62828", penwidth=1.3];
     f0_ret [shape=doublecircle, label="return", color="#6a1b9a", penwidth=1.4];
-    f0_bb1 -> f0_ret [style=dashed, color="#6a1b9a", label="v2"];
+    f0_bb1 -> f0_ret [style=dashed, color="#6a1b9a", label="v1"];
   }
-  subgraph cluster_f1 {
-    color="#90a4ae"; style="rounded,filled"; fillcolor="#f3f7fa"; penwidth=1.4;
-    margin=16;
-    labelloc=t; label="takes_i32";
-    f1_order [shape=point, style=invis, width=0, height=0, label=""];
-  }
-  subgraph cluster_f2 {
-    color="#90a4ae"; style="rounded,filled"; fillcolor="#f3f7fa"; penwidth=1.4;
-    margin=16;
-    labelloc=t; label="void_sink";
-    f2_order [shape=point, style=invis, width=0, height=0, label=""];
-  }
-  f0_order -> f1_order [style=invis, weight=200, minlen=2];
-  f1_order -> f2_order [style=invis, weight=200, minlen=2];
 }

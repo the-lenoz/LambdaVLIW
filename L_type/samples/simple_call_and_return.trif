@@ -1,0 +1,13 @@
+(
+  (func callee
+  )
+  (func main
+    (bb0
+    (let v0 (call callee))
+    (goto bb1)
+    )
+    (bb1
+    (return v0)
+    )
+  )
+)

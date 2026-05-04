@@ -42,14 +42,14 @@ digraph SSA {
     f2_bb2 [shape=plain, margin=0, label=<
       <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#f8fafb">
         <TR><TD ALIGN="LEFT" BGCOLOR="#eceff1"><B>bb2</B></TD></TR>
-        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v2 = call calc(v0)</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v2 = call calc()</FONT></TD></TR>
         <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">goto bb3</FONT></TD></TR>
       </TABLE>
     >];
     f2_bb3 [shape=plain, margin=0, label=<
       <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#fff8ef">
         <TR><TD ALIGN="LEFT" BGCOLOR="#ffe0b2"><B>bb3 [exit]</B></TD></TR>
-        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v3 = phi(bb2:v2, bb1:v1)</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v3 = phi(bb1:v1, bb2:v2)</FONT></TD></TR>
         <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">return v3</FONT></TD></TR>
       </TABLE>
     >];

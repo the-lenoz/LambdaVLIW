@@ -1,16 +1,29 @@
 #ifndef SSA_D
 #define SSA_D
 
+#include <stdint.h>
 typedef unsigned int SSAValName;
 typedef unsigned int SSABasicBlockName;
 typedef unsigned int SSAFuncName;
 
 #define SSA_INVALID_VAL ((SSAValName)~0u)
-#define SSA_VAL_VOID ((SSAValName)~1u)
+#define SSA_VALUE_VOID ((SSAValName)~1u)
 #define SSA_INVALID_BB ((SSABasicBlockName)~0u)
 #define SSA_INVALID_FUNC ((SSAFuncName)~0u)
 
 typedef struct _SSAModule SSAModule;
+
+typedef enum
+{
+  SSA_i1,
+  SSA_i8,
+  SSA_i32,
+  SSA_i64,
+  SSA_fp32,
+  SSA_fp64,
+  SSA_void,
+  SSA_invalid_type
+} SSAValueType;
 
 typedef struct
 {
@@ -40,10 +53,15 @@ typedef struct
   ArgList *args;
 } _FuncCall;
 
-typedef struct
+typedef union
 {
-  int value;
-} _ConstNode;
+  int i1_value;
+  int8_t i8_value;
+  int32_t i32_value;
+  int64_t i64_value;
+  float fp32_value;
+  double fp64_value;
+} SSAConst;
 
 typedef struct
 {
@@ -54,7 +72,7 @@ typedef union
 {
   _PhiNode phi;
   _FuncCall call;
-  _ConstNode cnst;
+  SSAConst cnst;
 } _SSAExpr;
 
 typedef enum
@@ -63,11 +81,12 @@ typedef enum
   SSA_VALUE_PHI,
   SSA_VALUE_CALL,
   SSA_VALUE_ARG,
-  SSA_VALUE_CONST,
-} SSAValueType;
+  SSA_VALUE_CONST
+} SSAValueKind;
 
 typedef struct
 {
+  SSAValueKind kind;
   SSAValueType type;
   int is_const; /*Ability of bijection between name and expression*/
   _SSAExpr expr;
@@ -91,15 +110,36 @@ typedef struct
   SSABasicBlockName false_dst;
 } SSABlockTerminator;
 
+typedef enum
+{
+  SSA_INSTR_VAL,
+  SSA_INSTR_VOID_CALL,
+  SSA_INSTR_TERM
+} SSAInstrKind;
+
+typedef struct
+{
+  SSAInstrKind kind;
+  SSAValName val;
+  _FuncCall call;
+  SSABlockTerminator term;
+} SSAInstr;
+
 typedef struct
 {
   SSAFuncName parent_name;
-  SSABlockTerminator terminator;
+
+  unsigned int instructions_count;
+  unsigned int instructions_cap;
+  SSAInstr *instructions;
+
 } SSABasicBlock;
 
 typedef struct
 {
   char *name;
+  SSAValueType return_type;
+  SSAValueType *arg_types;
 
   unsigned int values_count;
   unsigned int values_cap;
@@ -127,20 +167,29 @@ struct _SSAModule
 
 SSAModule *new_module();
 void destroy_module(SSAModule *module);
-SSAFuncName new_func(SSAModule *module, const char *name, unsigned int args_count, int is_global);
+SSAFuncName new_func(SSAModule *module, const char *name,
+                     SSAValueType return_type,
+                     unsigned int args_count,
+                     const SSAValueType *arg_types, int is_global);
+
 SSABasicBlockName new_BB(SSAModule *module, SSAFuncName func, int is_entry, int is_exit);
-SSAValName emit_phi_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, PhiList *phi_list);
+SSAValName emit_phi_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
+                           SSAValueType type);
 SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
                             SSABasicBlockName BB, SSAFuncName callee, ArgList *arg_list, int is_constexpr);
 SSAValName get_arg_val_name(SSAModule *module, SSAFuncName func, unsigned int arg_index);
-SSAValName emit_const_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, int value);
+SSAValName emit_const_assign(SSAModule *module, SSAFuncName func,
+                             SSABasicBlockName BB, SSAValueType type, SSAConst val);
+
+int emit_void_call(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
+                   SSAFuncName callee, ArgList *arg_list);
 
 int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName cond_name,
                    SSABasicBlockName true_dst, SSABasicBlockName false_dst);
 int emit_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSABasicBlockName dst);
 int emit_return(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName ret_name);
 
-int PhiList_append(PhiList **list, PhiPair pair);
+int add_phi_option(SSAModule *module, SSAFuncName fn, SSAValName val_name, PhiPair pair);
 int ArgList_append(ArgList **list, SSAValName arg_name);
 
 #endif

@@ -1,0 +1,35 @@
+(
+  (func + v0 v1
+  )
+  (func - v0 v1
+  )
+  (func * v0 v1
+  )
+  (func / v0 v1
+  )
+  (func > v0 v1
+  )
+  (func < v0 v1
+  )
+  (func = v0 v1
+  )
+  (func main
+    (bb0
+    (let v0 1)
+    (let v1 2)
+    (let v3 123123123)
+    (let v4 12321)
+    (let v5 21)
+    (let v6 10)
+    (let v2 (call * v0 v1))
+    (let v7 (call - v5 v6))
+    (let v8 (call / v4 v7))
+    (let v9 (call - v3 v8))
+    (let v10 (call + v2 v9))
+    (goto bb1)
+    )
+    (bb1
+    (return v10)
+    )
+  )
+)
