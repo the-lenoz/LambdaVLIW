@@ -34,6 +34,12 @@ TypeInferencer *new_inferencer()
 
 void destroy_inferencer(TypeInferencer *inferencer)
 {
+  if (!inferencer)
+    return;
+  ht_destroy(inferencer->functions_typing);
+  free(inferencer->vars);
+  *inferencer = (TypeInferencer){};  
+  free(inferencer);
 }
 
 static int is_valid_var_name(TypeInferencer *inferencer, InferVarName t)
@@ -45,7 +51,16 @@ static int is_valid_var_name(TypeInferencer *inferencer, InferVarName t)
 
 static InferVarName add_type_name(TypeInferencer *inferencer)
 {
-  return 0;
+  if (!inferencer)
+    return INFER_TYPE_NOT_ASSIGNED;
+  if (inferencer->vars_cap <= inferencer->vars_count)
+  {
+    inferencer->vars = realloc(inferencer->vars, inferencer->vars_cap * 2 * sizeof(InferType));
+    inferencer->vars_cap *= 2;
+  }
+  inferencer->vars_count++;
+  
+  return inferencer->vars_count - 1;
 }
 
 static int requires_type_assignment(TypeInferencer *inferencer, AST *node)
@@ -93,6 +108,16 @@ static TypedAST *typed_clone_AST(TypeInferencer *inferencer, AST *tree)
   return node;
 }
 
+void destroy_typed_AST(TypedAST *tree)
+{
+  if (!tree)
+    return;
+  destroy_typed_AST(tree->lchild);
+  destroy_typed_AST(tree->rchild);
+  free(tree->value);
+  free(tree);  
+}    
+
 InferVarName prune(TypeInferencer *inferencer, InferVarName t)
 {
   if (!inferencer || !is_valid_var_name(inferencer, t))
@@ -113,4 +138,9 @@ InferStatus unify(TypeInferencer *inferencer, InferVarName t1, InferVarName t2)
   return INFER_SUCCESS; // TOOO
 }
 
-TypedAST *inference_expr(TypeInferencer *inferencer, AST *expr);
+TypedAST *inference_expr(TypeInferencer *inferencer, AST *expr)
+{
+  TypedAST *tree = typed_clone_AST(inferencer, expr);
+
+  
+}    
