@@ -1,12 +1,18 @@
 (
   (func invalid_case
     (bb0
-    (let v0 (call invalid_case))
-    (if-goto v0 bb0 else bb1)
+    (let v0 7)
+    (call void_sink)
+    (let v1 (call invalid_case))
+    (if-goto v1 bb0 else bb1)
     )
     (bb1
-    (let v1 (call invalid_case))
-    (return v1)
+    (let v2 (call invalid_case))
+    (return v2)
     )
+  )
+  (func takes_i32 v0
+  )
+  (func void_sink
   )
 )

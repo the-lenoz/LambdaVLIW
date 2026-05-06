@@ -88,7 +88,7 @@ static int gv_end_line_row(FILE *out_fp)
 
 static int gv_print_val_ref(FILE *out_fp, SSAValName name)
 {
-  if (name == SSA_VAL_VOID)
+  if (name == SSA_VALUE_VOID)
     return fputs("nil", out_fp) == EOF ? -1 : 0;
   return fprintf(out_fp, "v%u", name) < 0 ? -1 : 0;
 }
@@ -120,7 +120,7 @@ static int gv_print_arg_list(FILE *out_fp, const ArgList *args)
 static int gv_print_phi_options(FILE *out_fp, const PhiList *options)
 {
   int printed_any = 0;
-  
+
   if (fputc('(', out_fp) == EOF)
     return -1;
 
@@ -132,7 +132,8 @@ static int gv_print_phi_options(FILE *out_fp, const PhiList *options)
     if (printed_any && fputs(", ", out_fp) == EOF)
       return -1;
 
-    if (fprintf(out_fp, "bb%u:", it->pair.previous_block_name) < 0 || gv_print_val_ref(out_fp, it->pair.value_name) < 0)
+    if (fprintf(out_fp, "bb%u:", it->pair.previous_block_name) < 0 ||
+        gv_print_val_ref(out_fp, it->pair.value_name) < 0)
       return -1;
 
     printed_any = 1;
@@ -147,6 +148,27 @@ static int gv_print_phi_options(FILE *out_fp, const PhiList *options)
   return fputc(')', out_fp) == EOF ? -1 : 0;
 }
 
+static int gv_print_const(FILE *out_fp, SSAValueType type, SSAConst value)
+{
+  switch (type)
+  {
+  case SSA_i1:
+    return fprintf(out_fp, "%d", value.i1_value ? 1 : 0) < 0 ? -1 : 0;
+  case SSA_i8:
+    return fprintf(out_fp, "%d", (int)value.i8_value) < 0 ? -1 : 0;
+  case SSA_i32:
+    return fprintf(out_fp, "%d", value.i32_value) < 0 ? -1 : 0;
+  case SSA_i64:
+    return fprintf(out_fp, "%lld", (long long)value.i64_value) < 0 ? -1 : 0;
+  case SSA_fp32:
+    return fprintf(out_fp, "%g", value.fp32_value) < 0 ? -1 : 0;
+  case SSA_fp64:
+    return fprintf(out_fp, "%g", value.fp64_value) < 0 ? -1 : 0;
+  default:
+    return -1;
+  }
+}
+
 static int gv_emit_value_row(FILE *out_fp, const SSAModule *module, const SSAFunc *func, SSAValName value_name)
 {
   const SSAValue *value;
@@ -155,23 +177,25 @@ static int gv_emit_value_row(FILE *out_fp, const SSAModule *module, const SSAFun
     return -1;
 
   value = &func->values[value_name];
+  if (value->kind == SSA_VALUE_ARG)
+    return -1;
   if (gv_begin_line_row(out_fp) < 0)
     return -1;
 
   if (fprintf(out_fp, "v%u = ", value_name) < 0)
     return -1;
 
-  if (value->type == SSA_VALUE_PHI)
+  switch (value->kind)
   {
+  case SSA_VALUE_PHI:
     if (fputs("phi", out_fp) == EOF || gv_print_phi_options(out_fp, value->expr.phi.options) < 0)
       return -1;
-  }
-  else if (value->type == SSA_VALUE_CONST)
-  {
-    if (fprintf(out_fp, "const %d", value->expr.cnst.value) < 0)
+    break;
+  case SSA_VALUE_CONST:
+    if (fputs("const ", out_fp) == EOF || gv_print_const(out_fp, value->type, value->expr.cnst) < 0)
       return -1;
-  }
-  else if (value->type == SSA_VALUE_CALL)
+    break;
+  case SSA_VALUE_CALL:
   {
     const SSAFunc *callee = gv_get_func(module, value->expr.call.calee_name);
 
@@ -184,34 +208,44 @@ static int gv_emit_value_row(FILE *out_fp, const SSAModule *module, const SSAFun
 
     if (value->is_const && fputs(" [const]", out_fp) == EOF)
       return -1;
+    break;
   }
-  else
+  default:
+    return -1;
+  }
+
+  return gv_end_line_row(out_fp);
+}
+
+static int gv_emit_void_call_row(FILE *out_fp, const SSAModule *module, const _FuncCall *call)
+{
+  const SSAFunc *callee;
+
+  if (!module || !call || gv_begin_line_row(out_fp) < 0)
+    return -1;
+
+  callee = gv_get_func(module, call->calee_name);
+  if (!callee || !callee->name)
+    return -1;
+
+  if (fputs("call ", out_fp) == EOF || gv_print_html_escaped(out_fp, callee->name) < 0 ||
+      gv_print_arg_list(out_fp, call->args) < 0)
     return -1;
 
   return gv_end_line_row(out_fp);
 }
 
-static int gv_emit_block_values(FILE *out_fp, const SSAModule *module, const SSAFunc *func, SSABasicBlockName bb,
-                                SSAValueType type)
-{
-  for (SSAValName v = 0; v < func->values_count; ++v)
-  {
-    const SSAValue *value = &func->values[v];
-
-    if (value->parent_name != bb || value->type != type)
-      continue;
-
-    if (gv_emit_value_row(out_fp, module, func, v) < 0)
-      return -1;
-  }
-
-  return 0;
-}
-
 static int gv_emit_terminator_row(FILE *out_fp, const SSABlockTerminator *term)
 {
-  if (!term || gv_begin_line_row(out_fp) < 0)
+  if (gv_begin_line_row(out_fp) < 0)
     return -1;
+
+  if (!term)
+  {
+    if (fputs("<no terminator>", out_fp) == EOF)
+      return -1;
+    return gv_end_line_row(out_fp);
+  }
 
   switch (term->type)
   {
@@ -225,11 +259,12 @@ static int gv_emit_terminator_row(FILE *out_fp, const SSABlockTerminator *term)
     break;
   case SSA_TERM_COND_GOTO:
     if (term->cond == SSA_INVALID_VAL || term->true_dst == SSA_INVALID_BB || term->false_dst == SSA_INVALID_BB ||
-        fprintf(out_fp, "if v%u then bb%u else bb%u", term->cond, term->true_dst, term->false_dst) < 0)
+        fprintf(out_fp, "if ") < 0 || gv_print_val_ref(out_fp, term->cond) < 0 ||
+        fprintf(out_fp, " then bb%u else bb%u", term->true_dst, term->false_dst) < 0)
       return -1;
     break;
   case SSA_TERM_RETURN:
-    if (term->ret_val == SSA_INVALID_VAL || fputs("return ", out_fp) == EOF || gv_print_val_ref(out_fp, term->ret_val) < 0)
+    if (fputs("return ", out_fp) == EOF || gv_print_val_ref(out_fp, term->ret_val) < 0)
       return -1;
     break;
   default:
@@ -237,6 +272,43 @@ static int gv_emit_terminator_row(FILE *out_fp, const SSABlockTerminator *term)
   }
 
   return gv_end_line_row(out_fp);
+}
+
+static int gv_emit_instruction_row(FILE *out_fp, const SSAModule *module, const SSAFunc *func, const SSAInstr *instr)
+{
+  if (!instr)
+    return -1;
+
+  switch (instr->kind)
+  {
+  case SSA_INSTR_VAL:
+    return gv_emit_value_row(out_fp, module, func, instr->val);
+  case SSA_INSTR_VOID_CALL:
+    return gv_emit_void_call_row(out_fp, module, &instr->call);
+  case SSA_INSTR_TERM:
+    return gv_emit_terminator_row(out_fp, &instr->term);
+  default:
+    return -1;
+  }
+}
+
+static const SSABlockTerminator *gv_get_block_terminator(const SSAFunc *func, SSABasicBlockName bb)
+{
+  const SSABasicBlock *block;
+  const SSAInstr *instr;
+
+  if (!func || bb >= func->basic_blocks_count)
+    return NULL;
+
+  block = &func->basic_blocks[bb];
+  if (block->instructions_count == 0)
+    return NULL;
+
+  instr = &block->instructions[block->instructions_count - 1];
+  if (instr->kind != SSA_INSTR_TERM)
+    return NULL;
+
+  return &instr->term;
 }
 
 static int gv_emit_block_node(FILE *out_fp, const SSAModule *module, const SSAFunc *func, SSAFuncName fn,
@@ -274,14 +346,13 @@ static int gv_emit_block_node(FILE *out_fp, const SSAModule *module, const SSAFu
   if (fputs("</B></TD></TR>\n", out_fp) == EOF)
     return -1;
 
-  if (gv_emit_block_values(out_fp, module, func, bb, SSA_VALUE_PHI) < 0)
-    return -1;
-  if (gv_emit_block_values(out_fp, module, func, bb, SSA_VALUE_CONST) < 0)
-    return -1;
-  if (gv_emit_block_values(out_fp, module, func, bb, SSA_VALUE_CALL) < 0)
-    return -1;
-  if (gv_emit_terminator_row(out_fp, &block->terminator) < 0)
-    return -1;
+  for (unsigned int i = 0; i < block->instructions_count; ++i)
+    if (gv_emit_instruction_row(out_fp, module, func, &block->instructions[i]) < 0)
+      return -1;
+
+  if (!gv_get_block_terminator(func, bb))
+    if (gv_emit_terminator_row(out_fp, NULL) < 0)
+      return -1;
 
   return fputs("      </TABLE>\n    >];\n", out_fp) == EOF ? -1 : 0;
 }
@@ -322,7 +393,9 @@ static int gv_emit_function_cluster(FILE *out_fp, const SSAModule *module, SSAFu
 
   for (SSABasicBlockName bb = 0; bb < func->basic_blocks_count; ++bb)
   {
-    const SSABlockTerminator *term = &func->basic_blocks[bb].terminator;
+    const SSABlockTerminator *term = gv_get_block_terminator(func, bb);
+    if (!term)
+      continue;
 
     if (term->type == SSA_TERM_GOTO)
     {
@@ -353,13 +426,12 @@ static int gv_emit_function_cluster(FILE *out_fp, const SSAModule *module, SSAFu
 
     for (SSABasicBlockName bb = 0; bb < func->basic_blocks_count; ++bb)
     {
-      const SSABlockTerminator *term = &func->basic_blocks[bb].terminator;
+      const SSABlockTerminator *term = gv_get_block_terminator(func, bb);
 
-      if (term->type != SSA_TERM_RETURN)
+      if (!term || term->type != SSA_TERM_RETURN)
         continue;
 
-      if (term->ret_val == SSA_INVALID_VAL ||
-          fprintf(out_fp, "    f%u_bb%u -> f%u_ret [style=dashed, color=\"#6a1b9a\", label=\"", fn, bb, fn) < 0 ||
+      if (fprintf(out_fp, "    f%u_bb%u -> f%u_ret [style=dashed, color=\"#6a1b9a\", label=\"", fn, bb, fn) < 0 ||
           gv_print_val_ref(out_fp, term->ret_val) < 0 || fprintf(out_fp, "\"];\n") < 0)
         return -1;
     }

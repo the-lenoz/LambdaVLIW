@@ -1,9 +1,11 @@
-#include <stdio.h>
-#include "../parser/parser.h"
-#include "../L_defun/frontend.h"
 #include "../C_backend/backend.h"
-
-
+#include "../L_defun/frontend.h"
+#ifdef DEBUG
+#include "../SSA/SSA_dump_graphviz.h"
+#include <stdlib.h>
+#endif
+#include "../parser/parser.h"
+#include <stdio.h>
 
 int compile(const char *source_path, const char *out_path)
 {
@@ -24,6 +26,20 @@ int compile(const char *source_path, const char *out_path)
   if (!module)
     return fprintf(stderr, "Fatal: semanthic error.\n"), fclose(out_fp), -1;
 
+#ifdef DEBUG
+  char *debug_path = calloc(strlen(out_path) + 5, sizeof(char));
+  strcpy(debug_path, out_path);
+  strcat(debug_path, ".dot");
+
+  FILE *debug_fp = fopen(debug_path, "w");
+  if (debug_fp)
+  {
+    SSA_dump_module_graphviz(module, debug_fp);
+    fclose(debug_fp);
+  }
+  free(debug_path);
+#endif
+
   if (!dummy_SSA_module_to_C(module, out_fp))
   {
     fclose(out_fp);
@@ -31,10 +47,10 @@ int compile(const char *source_path, const char *out_path)
     return -1;
   }
   destroy_module(module);
-  
-  fclose(out_fp);  
+
+  fclose(out_fp);
   return 0;
-}    
+}
 
 int main(int argc, char **argv)
 {
