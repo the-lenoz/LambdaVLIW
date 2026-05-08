@@ -78,9 +78,9 @@ SSAValName compile_expr(AST *expr, VarMappingList *vars, HTable *funcs,
     return SSA_INVALID_VAL;
   if (expr->type == CONST_NUM)
   {
-    int64_t val;
-    sscanf(expr->value, "%ld", &val);
-    SSAValName const_val_name = emit_const_assign(module, fn, *active_BB, val);
+    SSAConst val;
+    sscanf(expr->value, "%ld", &val.i64_value);
+    SSAValName const_val_name = emit_const_assign(module, fn, *active_BB, SSA_i64, val);
     return const_val_name;
   }
   else if (expr->type == NAME)
@@ -111,7 +111,7 @@ SSAValName compile_expr(AST *expr, VarMappingList *vars, HTable *funcs,
   return result;
   STR_CASE("cond")
   SSABasicBlockName result_BB = new_BB(module, fn, 0, 0);
-  PhiList *result_list = NULL;
+  SSAValName result = emit_phi_assign(module, fn, result_BB, SSA_i64);
   for (AST *options_list = CDR(expr); options_list; options_list = CDR(options_list))
   {
     AST *option = CAR(options_list);
@@ -121,17 +121,19 @@ SSAValName compile_expr(AST *expr, VarMappingList *vars, HTable *funcs,
     SSAValName condition = compile_expr(cond, vars, funcs, module, fn, active_BB);
     SSABasicBlockName true_BB = new_BB(module, fn, 0, 0);
     SSABasicBlockName next_BB = new_BB(module, fn, 0, 0);
-    emit_cond_goto(module, fn, *active_BB, condition, true_BB, next_BB);
+    SSAValName casted_condition = emit_bool_cast_assign(module, fn, *active_BB, condition, SSA_i64);
+    emit_cond_goto(module, fn, *active_BB, casted_condition, true_BB, next_BB);
     *active_BB = true_BB;
     SSAValName true_result = compile_expr(then, vars, funcs, module, fn, active_BB);
     emit_goto(module, fn, *active_BB, result_BB);
-    PhiList_append(&result_list, (PhiPair){*active_BB, true_result});
+    add_phi_option(module, fn, result, (PhiPair){*active_BB, true_result});
     *active_BB = next_BB;
   }
   emit_goto(module, fn, *active_BB, result_BB);
-  PhiList_append(&result_list, (PhiPair){*active_BB, SSA_VAL_VOID}); /*If there's no true case in cond*/
+  add_phi_option(module, fn, result,
+                 (PhiPair){*active_BB, SSA_VALUE_VOID}); /*If there's no true case in cond*/
   *active_BB = result_BB;
-  return emit_phi_assign(module, fn, *active_BB, result_list);
+  return result;
 
   STR_DEFAULT
   ArgList *args = NULL;
@@ -154,7 +156,13 @@ SSAFuncName build_function(AST *definition, SSAModule *module, HTable *funcs)
   AST *arg_list = THIRD(definition);
   AST *body = THIRD(CDR(definition)); // FOURTH
 
-  SSAFuncName func = new_func(module, name, AST_list_len(arg_list), 1);
+  unsigned argc = AST_list_len(arg_list);
+
+  SSAValueType *arg_types = malloc(sizeof(SSAValueType) * argc);
+  for (unsigned i = 0; i < argc; ++i)
+    arg_types[i] = SSA_i64;
+  SSAFuncName func = new_func(module, name, SSA_i64, argc, arg_types, 1);
+  free(arg_types);
   ht_set(funcs, name, (void *)(size_t)func);
 
   SSABasicBlockName entry_block, exit_block, active_block;
@@ -182,7 +190,10 @@ SSAModule *build_program(AST *program)
 
   SSAModule *module = new_module();
 
-#define DECLARE_BIN_FUNC_STUB(name) ht_set(funcs, name, (void *)(size_t)new_func(module, name, 2, 0))
+#define DECLARE_BIN_FUNC_STUB(name) \
+  ht_set(funcs, name,               \
+         (void *)(size_t)new_func(module, name, RET_TYPE, 2, (SSAValueType[]){SSA_i64, SSA_i64}, 0))
+#define RET_TYPE SSA_i64
   DECLARE_BIN_FUNC_STUB("+");
   DECLARE_BIN_FUNC_STUB("-");
   DECLARE_BIN_FUNC_STUB("*");
@@ -191,14 +202,17 @@ SSAModule *build_program(AST *program)
   DECLARE_BIN_FUNC_STUB("<");
   DECLARE_BIN_FUNC_STUB("=");
   DECLARE_BIN_FUNC_STUB("cons");
+#undef RET_TYPE
 #undef DECLARE_BIN_FUNC_STUB
 
-  #define DECLARE_UN_FUNC_STUB(name) ht_set(funcs, name, (void *)(size_t)new_func(module, name, 1, 0))
+#define DECLARE_UN_FUNC_STUB(name) \
+  ht_set(funcs, name,              \
+         (void *)(size_t)new_func(module, name, SSA_i64, 1, (SSAValueType[]){SSA_i64}, 0))
   DECLARE_UN_FUNC_STUB("print_int");
   DECLARE_UN_FUNC_STUB("car");
   DECLARE_UN_FUNC_STUB("cdr");
-  #undef DELCARE_UN_FUNC_STUB
-  
+#undef DELCARE_UN_FUNC_STUB
+
   for (AST *code_blocks = CAR(program); code_blocks; code_blocks = CDR(code_blocks))
   {
     AST *stmt = CAR(code_blocks);
@@ -206,7 +220,8 @@ SSAModule *build_program(AST *program)
     {
       ht_destroy(funcs);
       return fprintf(stderr, "Fatal: only defun is supported in global namespace, got '%s'.\n",
-                     GET_OP(stmt)), NULL;
+                     GET_OP(stmt)),
+             NULL;
     }
     build_function(stmt, module, funcs);
   }

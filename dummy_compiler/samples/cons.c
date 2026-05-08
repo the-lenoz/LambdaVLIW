@@ -46,58 +46,64 @@ int64_t range(int64_t v0, int64_t v1){
   int64_t v9, __swp_v9;
   int64_t v10, __swp_v10;
   int64_t v11, __swp_v11;
+  int64_t v12, __swp_v12;
+  int64_t v13, __swp_v13;
+  int64_t v14, __swp_v14;
   int __next_BB = 0;
   while (1) {
     switch (__next_BB) {
       case 0:
-        v2 = v0 == v1;
-        if (v2) {
+        v3 = v0 == v1;
+        v4 = !!v3;
+        if (v4) {
           __next_BB = 3;
       } else {
           __next_BB = 4;
       }
         break;
       case 1:
-        return v11;
+        return v2;
         break;
       case 2:
         __next_BB = 1;
         break;
       case 3:
-        v3 = 0;
-        __swp_v11 = v3;
-        v11 = __swp_v11;
+        v5 = 0;
+        __swp_v2 = v5;
+        v2 = __swp_v2;
         __next_BB = 2;
         break;
       case 4:
-        v4 = v0 > v1;
-        if (v4) {
+        v6 = v0 > v1;
+        v7 = !!v6;
+        if (v7) {
           __next_BB = 5;
       } else {
           __next_BB = 6;
       }
         break;
       case 5:
-        v5 = 0;
-        __swp_v11 = v5;
-        v11 = __swp_v11;
+        v8 = 0;
+        __swp_v2 = v8;
+        v2 = __swp_v2;
         __next_BB = 2;
         break;
       case 6:
-        v6 = 1;
-        if (v6) {
+        v9 = 1;
+        v10 = !!v9;
+        if (v10) {
           __next_BB = 7;
       } else {
           __next_BB = 8;
       }
         break;
       case 7:
-        v7 = 1;
-        v8 = v0 + v7;
-        v9 = range(v8, v1);
-        v10 = cons(v0, v9);
-        __swp_v11 = v10;
-        v11 = __swp_v11;
+        v11 = 1;
+        v12 = v0 + v11;
+        v13 = range(v12, v1);
+        v14 = cons(v0, v13);
+        __swp_v2 = v14;
+        v2 = __swp_v2;
         __next_BB = 2;
         break;
       case 8:
@@ -119,46 +125,50 @@ int64_t print_list(int64_t v0){
   int64_t v8, __swp_v8;
   int64_t v9, __swp_v9;
   int64_t v10, __swp_v10;
+  int64_t v11, __swp_v11;
+  int64_t v12, __swp_v12;
   int __next_BB = 0;
   while (1) {
     switch (__next_BB) {
       case 0:
-        v1 = 0;
-        v2 = v0 == v1;
-        if (v2) {
+        v2 = 0;
+        v3 = v0 == v2;
+        v4 = !!v3;
+        if (v4) {
           __next_BB = 3;
       } else {
           __next_BB = 4;
       }
         break;
       case 1:
-        return v10;
+        return v1;
         break;
       case 2:
         __next_BB = 1;
         break;
       case 3:
-        v3 = 0;
-        __swp_v10 = v3;
-        v10 = __swp_v10;
+        v5 = 0;
+        __swp_v1 = v5;
+        v1 = __swp_v1;
         __next_BB = 2;
         break;
       case 4:
-        v4 = 1;
-        if (v4) {
+        v6 = 1;
+        v7 = !!v6;
+        if (v7) {
           __next_BB = 5;
       } else {
           __next_BB = 6;
       }
         break;
       case 5:
-        v5 = car(v0);
-        v6 = print_int(v5);
-        v7 = cdr(v0);
-        v8 = print_list(v7);
-        v9 = 0;
-        __swp_v10 = v9;
-        v10 = __swp_v10;
+        v8 = car(v0);
+        v9 = print_int(v8);
+        v10 = cdr(v0);
+        v11 = print_list(v10);
+        v12 = 0;
+        __swp_v1 = v12;
+        v1 = __swp_v1;
         __next_BB = 2;
         break;
       case 6:

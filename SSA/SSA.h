@@ -55,11 +55,11 @@ typedef struct
 
 typedef union
 {
-  int i1_value;
-  int8_t i8_value;
-  int32_t i32_value;
+  int64_t i1_value;
+  int64_t i8_value;
+  int64_t i32_value;
   int64_t i64_value;
-  float fp32_value;
+  double fp32_value;
   double fp64_value;
 } SSAConst;
 
@@ -73,6 +73,7 @@ typedef union
   _PhiNode phi;
   _FuncCall call;
   SSAConst cnst;
+  SSAValName bool_val;
 } _SSAExpr;
 
 typedef enum
@@ -81,7 +82,8 @@ typedef enum
   SSA_VALUE_PHI,
   SSA_VALUE_CALL,
   SSA_VALUE_ARG,
-  SSA_VALUE_CONST
+  SSA_VALUE_CONST,
+  SSA_VALUE_BOOL_CAST
 } SSAValueKind;
 
 typedef struct
@@ -181,6 +183,9 @@ SSAValName get_arg_val_name(SSAModule *module, SSAFuncName func, unsigned int ar
 SSAValName emit_const_assign(SSAModule *module, SSAFuncName func,
                              SSABasicBlockName BB, SSAValueType type, SSAConst val);
 
+SSAValName emit_bool_cast_assign(SSAModule *module, SSAFuncName func,
+                                 SSABasicBlockName BB, SSAValName val, SSAValueType type);
+
 int emit_void_call(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
                    SSAFuncName callee, ArgList *arg_list);
 
@@ -191,5 +196,10 @@ int emit_return(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAVa
 
 int add_phi_option(SSAModule *module, SSAFuncName fn, SSAValName val_name, PhiPair pair);
 int ArgList_append(ArgList **list, SSAValName arg_name);
+
+
+SSAFunc *get_func(SSAModule *module, SSAFuncName fn);
+int bb_has_terminator(const SSAFunc *func, SSABasicBlockName bb);
+SSAInstr get_BB_terminator(SSAModule *module, SSAFuncName fn, SSABasicBlockName BB);
 
 #endif

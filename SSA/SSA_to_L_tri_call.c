@@ -106,6 +106,15 @@ static int dump_emit_call(FILE *out_fp, const SSAModule *module, const _FuncCall
   return 0;
 }
 
+static int dump_emit_bool_cast(FILE *out_fp, SSAValName value_name)
+{
+  if (fprintf(out_fp, "(bool-cast ") < 0 || dump_print_val_name(out_fp, value_name) < 0 ||
+      fprintf(out_fp, ")") < 0)
+    return -1;
+
+  return 0;
+}
+
 static int dump_emit_value(FILE *out_fp, const SSAModule *module, const SSAFunc *func, SSAValName value_name)
 {
   const SSAValue *value;
@@ -132,6 +141,10 @@ static int dump_emit_value(FILE *out_fp, const SSAModule *module, const SSAFunc 
     break;
   case SSA_VALUE_CALL:
     if (dump_emit_call(out_fp, module, &value->expr.call) < 0)
+      return -1;
+    break;
+  case SSA_VALUE_BOOL_CAST:
+    if (dump_emit_bool_cast(out_fp, value->expr.bool_val) < 0)
       return -1;
     break;
   default:

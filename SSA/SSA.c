@@ -39,7 +39,7 @@ static int ensure_array_capacity(void **arr, unsigned int *cap, size_t elem_size
   return 0;
 }
 
-static SSAFunc *get_func(SSAModule *module, SSAFuncName func)
+SSAFunc *get_func(SSAModule *module, SSAFuncName func)
 {
   if (!module || func >= module->functions_count)
     return NULL;
@@ -57,13 +57,23 @@ static int is_valid_value(const SSAFunc *func, SSAValName value)
   return func && value < func->values_count;
 }
 
-static int bb_has_terminator(const SSAFunc *func, SSABasicBlockName bb)
+int bb_has_terminator(const SSAFunc *func, SSABasicBlockName bb)
 {
   return is_valid_bb(func, bb) &&
          func->basic_blocks[bb].instructions_count &&
          func->basic_blocks[bb].instructions[func->basic_blocks[bb].instructions_count - 1].kind ==
              SSA_INSTR_TERM;
 }
+
+SSAInstr get_BB_terminator(SSAModule *module, SSAFuncName fn, SSABasicBlockName BB)
+{
+  SSAFunc *function;
+  if (!module || !(function = get_func(module, fn)))
+    return (SSAInstr){};
+  if (!bb_has_terminator(function, BB))
+    return (SSAInstr){};
+  return function->basic_blocks[BB].instructions[function->basic_blocks[BB].instructions_count - 1];
+}    
 
 static void destroy_phi_list(PhiList *list)
 {
@@ -423,6 +433,33 @@ SSAValName emit_const_assign(SSAModule *module, SSAFuncName func,
 
   return val_name;
 }
+SSAValName emit_bool_cast_assign(SSAModule *module, SSAFuncName func,
+                                 SSABasicBlockName BB, SSAValName val, SSAValueType type)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function || !is_valid_bb(function, BB) || type == SSA_void || bb_has_terminator(function, BB))
+    return SSA_INVALID_VAL;
+
+  SSAValue value = (SSAValue){
+      SSA_VALUE_BOOL_CAST,
+      SSA_i1,
+      1,
+      {.bool_val = val},
+      BB};
+  
+  SSAValName val_name = append_value(function, value);
+
+  if (val_name == SSA_INVALID_VAL)
+    return val_name;
+
+  if (!add_instr(function, BB, (SSAInstr){SSA_INSTR_VAL, val_name, {}, {}}))
+  {
+    pop_value(function, val_name);
+    return SSA_INVALID_VAL;
+  }
+
+  return val_name;
+}    
 
 int emit_void_call(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
                    SSAFuncName callee, ArgList *arg_list)

@@ -85,6 +85,13 @@ static SSAConst make_i32(int32_t value)
   return cnst;
 }
 
+static SSAConst make_i64(int64_t value)
+{
+  SSAConst cnst = {0};
+  cnst.i64_value = value;
+  return cnst;
+}
+
 static const SSAInstr *get_instr(const SSAFunc *func, SSABasicBlockName bb, unsigned int index)
 {
   if (!func || bb >= func->basic_blocks_count)
@@ -496,6 +503,54 @@ static int test_dump_func_args(void)
   return 0;
 }
 
+static int test_bool_cast_dump(void)
+{
+  SSAModule *module;
+  SSAFuncName fn;
+  SSABasicBlockName bb_entry;
+  SSABasicBlockName bb_exit;
+  SSAValName v0;
+  SSAValName v1;
+  FILE *fp;
+
+  module = new_module();
+  TEST_ASSERT(module != NULL);
+
+  fn = new_func(module, "bool_cast_main", SSA_i1, 0, NULL, 1);
+  TEST_ASSERT(fn != SSA_INVALID_FUNC);
+
+  bb_entry = new_BB(module, fn, 1, 0);
+  bb_exit = new_BB(module, fn, 0, 1);
+  TEST_ASSERT(bb_entry != SSA_INVALID_BB);
+  TEST_ASSERT(bb_exit != SSA_INVALID_BB);
+
+  v0 = emit_const_assign(module, fn, bb_entry, SSA_i64, make_i64(42));
+  TEST_ASSERT(v0 != SSA_INVALID_VAL);
+  v1 = emit_bool_cast_assign(module, fn, bb_entry, v0, SSA_i64);
+  TEST_ASSERT(v1 != SSA_INVALID_VAL);
+  TEST_ASSERT(module->functions[fn].values[v1].kind == SSA_VALUE_BOOL_CAST);
+  TEST_ASSERT(module->functions[fn].values[v1].type == SSA_i1);
+  TEST_ASSERT(module->functions[fn].values[v1].expr.bool_val == v0);
+
+  TEST_ASSERT(emit_goto(module, fn, bb_entry, bb_exit) == 0);
+  TEST_ASSERT(emit_return(module, fn, bb_exit, v1) == 0);
+
+  fp = tmpfile();
+  TEST_ASSERT(fp != NULL);
+  TEST_ASSERT(SSA_to_L_tri_call_module(module, fp) == 0);
+  TEST_ASSERT(stream_contains(fp, "(bool-cast v0)"));
+  fclose(fp);
+
+  fp = tmpfile();
+  TEST_ASSERT(fp != NULL);
+  TEST_ASSERT(SSA_dump_module_graphviz(module, fp) == 0);
+  TEST_ASSERT(stream_contains(fp, "bool-cast v0"));
+  fclose(fp);
+
+  destroy_module(module);
+  return 0;
+}
+
 typedef int (*test_fn)(void);
 
 typedef struct
@@ -513,6 +568,7 @@ int main(void)
       {"const_assign", test_const_assign},
       {"void_value", test_void_value},
       {"dump_func_args", test_dump_func_args},
+      {"bool_cast_dump", test_bool_cast_dump},
   };
   int failed = 0;
   size_t i;
