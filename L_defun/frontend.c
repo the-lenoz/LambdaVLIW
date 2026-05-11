@@ -110,7 +110,7 @@ SSAValName compile_expr(AST *expr, VarMappingList *vars, HTable *funcs,
   destroy_var_mapping_untill(vars, parent_namespace);
   return result;
   STR_CASE("cond")
-  SSABasicBlockName result_BB = new_BB(module, fn, 0, 0);
+  SSABasicBlockName result_BB = new_BB(module, fn);
   SSAValName result = emit_phi_assign(module, fn, result_BB, SSA_i64);
   for (AST *options_list = CDR(expr); options_list; options_list = CDR(options_list))
   {
@@ -119,8 +119,8 @@ SSAValName compile_expr(AST *expr, VarMappingList *vars, HTable *funcs,
     AST *then = SECOND(option);
 
     SSAValName condition = compile_expr(cond, vars, funcs, module, fn, active_BB);
-    SSABasicBlockName true_BB = new_BB(module, fn, 0, 0);
-    SSABasicBlockName next_BB = new_BB(module, fn, 0, 0);
+    SSABasicBlockName true_BB = new_BB(module, fn);
+    SSABasicBlockName next_BB = new_BB(module, fn);
     SSAValName casted_condition = emit_bool_cast_assign(module, fn, *active_BB, condition, SSA_i64);
     emit_cond_goto(module, fn, *active_BB, casted_condition, true_BB, next_BB);
     *active_BB = true_BB;
@@ -166,8 +166,11 @@ SSAFuncName build_function(AST *definition, SSAModule *module, HTable *funcs)
   ht_set(funcs, name, (void *)(size_t)func);
 
   SSABasicBlockName entry_block, exit_block, active_block;
-  entry_block = new_BB(module, func, 1, 0);
-  exit_block = new_BB(module, func, 0, 1);
+  entry_block = new_BB(module, func);
+  exit_block = new_BB(module, func);
+  set_entry_BB(module, func, entry_block);
+  set_exit_BB(module, func, exit_block);
+  
   active_block = entry_block;
   VarMappingList *locals = NULL;
   for (int i = 0; arg_list && CAR(arg_list); arg_list = CDR(arg_list), ++i)

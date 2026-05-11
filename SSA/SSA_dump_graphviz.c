@@ -307,16 +307,14 @@ static int gv_emit_instruction_row(FILE *out_fp, const SSAModule *module, const 
 static const SSABlockTerminator *gv_get_block_terminator(const SSAFunc *func, SSABasicBlockName bb)
 {
   const SSABasicBlock *block;
-  const SSAInstr *instr;
 
   if (!func || bb >= func->basic_blocks_count)
     return NULL;
 
   block = &func->basic_blocks[bb];
-  if (block->instructions_count == 0)
+  const SSAInstr *instr = block->last_instr;
+  if (!instr)
     return NULL;
-
-  instr = &block->instructions[block->instructions_count - 1];
   if (instr->kind != SSA_INSTR_TERM)
     return NULL;
 
@@ -358,8 +356,8 @@ static int gv_emit_block_node(FILE *out_fp, const SSAModule *module, const SSAFu
   if (fputs("</B></TD></TR>\n", out_fp) == EOF)
     return -1;
 
-  for (unsigned int i = 0; i < block->instructions_count; ++i)
-    if (gv_emit_instruction_row(out_fp, module, func, &block->instructions[i]) < 0)
+  for (SSAInstrName instr = block->first_instr; instr != SSA_INVALID_INSTR; instr = instr->next)
+    if (gv_emit_instruction_row(out_fp, module, func, instr) < 0)
       return -1;
 
   if (!gv_get_block_terminator(func, bb))

@@ -168,12 +168,12 @@ int dummy_SSA_module_to_C(SSAModule *module, FILE *fp)
     for (SSABasicBlockName i = 0; i < fn->basic_blocks_count; ++i)
     {
       fprintf(fp, "      case %d:\n", i);
-      for (int j = 0; j < fn->basic_blocks[i].instructions_count; ++j)
+      for (SSAInstrName instr = fn->basic_blocks[i].first_instr; instr; instr = instr->next)
       {
-        switch (fn->basic_blocks[i].instructions[j].kind)
+        switch (instr->kind)
         {
         case SSA_INSTR_VAL:
-          val = fn->basic_blocks[i].instructions[j].val;
+          val = instr->val;
           switch (fn->values[val].kind)
           {
           case SSA_VALUE_CONST:
@@ -213,7 +213,7 @@ int dummy_SSA_module_to_C(SSAModule *module, FILE *fp)
           }
           break;
         case SSA_INSTR_VOID_CALL:
-	  call = fn->basic_blocks[i].instructions[j].call;
+	  call = instr->call;
           fprintf(fp, "%s(", module->functions[call.calee_name].name);
           for (ArgList *args = call.args; args; args = args->next)
           {
@@ -224,7 +224,7 @@ int dummy_SSA_module_to_C(SSAModule *module, FILE *fp)
           fprintf(fp, ");\n");
           break;
         case SSA_INSTR_TERM:
-          term = fn->basic_blocks[i].instructions[j].term;
+          term = instr->term;
           switch (term.type)
           {
           case SSA_TERM_RETURN:

@@ -224,8 +224,8 @@ static int dump_emit_block(FILE *out_fp, const SSAModule *module, const SSAFunc 
   if (fprintf(out_fp, "    (") < 0 || dump_print_bb_name(out_fp, bb) < 0 || fprintf(out_fp, "\n") < 0)
     return -1;
 
-  for (unsigned int i = 0; i < block->instructions_count; ++i)
-    if (dump_emit_instruction(out_fp, module, func, &block->instructions[i]) < 0)
+  for (SSAInstrName instr = block->first_instr; instr != SSA_INVALID_INSTR; instr = instr->next)
+    if (dump_emit_instruction(out_fp, module, func, instr) < 0)
       return -1;
 
   return fprintf(out_fp, "    )\n") < 0 ? -1 : 0;

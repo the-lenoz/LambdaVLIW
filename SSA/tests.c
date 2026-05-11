@@ -96,23 +96,37 @@ static const SSAInstr *get_instr(const SSAFunc *func, SSABasicBlockName bb, unsi
 {
   if (!func || bb >= func->basic_blocks_count)
     return NULL;
-  if (index >= func->basic_blocks[bb].instructions_count)
-    return NULL;
-  return &func->basic_blocks[bb].instructions[index];
+
+  SSAInstrName instr = func->basic_blocks[bb].first_instr;
+  for (unsigned int i = 0; instr != SSA_INVALID_INSTR; instr = instr->next, ++i)
+    if (i == index)
+      return instr;
+
+  return NULL;
 }
 
 static const SSABlockTerminator *get_terminator(const SSAFunc *func, SSABasicBlockName bb)
 {
-  const SSAInstr *instr;
-
-  if (!func || bb >= func->basic_blocks_count || func->basic_blocks[bb].instructions_count == 0)
+  if (!func || bb >= func->basic_blocks_count)
     return NULL;
 
-  instr = get_instr(func, bb, func->basic_blocks[bb].instructions_count - 1);
+  const SSAInstr *instr = func->basic_blocks[bb].last_instr;
   if (!instr || instr->kind != SSA_INSTR_TERM)
     return NULL;
 
   return &instr->term;
+}
+
+static unsigned int get_instr_count(const SSAFunc *func, SSABasicBlockName bb)
+{
+  unsigned int count = 0;
+  if (!func || bb >= func->basic_blocks_count)
+    return 0;
+
+  for (SSAInstrName instr = func->basic_blocks[bb].first_instr; instr != SSA_INVALID_INSTR; instr = instr->next)
+    count += 1;
+
+  return count;
 }
 
 static int count_phi_options(const PhiList *options)
@@ -144,10 +158,12 @@ static int test_simple_call_and_return(void)
   caller = new_func(module, "main", SSA_i32, 0, NULL, 1);
   TEST_ASSERT(caller != SSA_INVALID_FUNC);
 
-  bb_entry = new_BB(module, caller, 1, 0);
-  bb_exit = new_BB(module, caller, 0, 1);
+  bb_entry = new_BB(module, caller);
+  bb_exit = new_BB(module, caller);
   TEST_ASSERT(bb_entry != SSA_INVALID_BB);
   TEST_ASSERT(bb_exit != SSA_INVALID_BB);
+  TEST_ASSERT(set_entry_BB(module, caller, bb_entry) == 1);
+  TEST_ASSERT(set_exit_BB(module, caller, bb_exit) == 1);
 
   caller_fn = &module->functions[caller];
   TEST_ASSERT(caller_fn->entry_block == bb_entry);
@@ -164,7 +180,7 @@ static int test_simple_call_and_return(void)
   TEST_ASSERT(caller_fn->values[call_val].parent_name == bb_entry);
 
   TEST_ASSERT(emit_goto(module, caller, bb_entry, bb_exit) == 0);
-  TEST_ASSERT(caller_fn->basic_blocks[bb_entry].instructions_count == 2);
+  TEST_ASSERT(get_instr_count(caller_fn, bb_entry) == 2);
   TEST_ASSERT(get_instr(caller_fn, bb_entry, 0)->kind == SSA_INSTR_VAL);
   TEST_ASSERT(get_instr(caller_fn, bb_entry, 0)->val == call_val);
 
@@ -179,7 +195,7 @@ static int test_simple_call_and_return(void)
   TEST_ASSERT(emit_goto(module, caller, bb_entry, bb_exit) < 0);
 
   TEST_ASSERT(emit_return(module, caller, bb_exit, call_val) == 0);
-  TEST_ASSERT(caller_fn->basic_blocks[bb_exit].instructions_count == 1);
+  TEST_ASSERT(get_instr_count(caller_fn, bb_exit) == 1);
   term = get_terminator(caller_fn, bb_exit);
   TEST_ASSERT(term != NULL);
   TEST_ASSERT(term->type == SSA_TERM_RETURN);
@@ -227,14 +243,16 @@ static int test_branch_and_phi(void)
   TEST_ASSERT(calc_fn != SSA_INVALID_FUNC);
   TEST_ASSERT(main_fn_name != SSA_INVALID_FUNC);
 
-  bb_entry = new_BB(module, main_fn_name, 1, 0);
-  bb_true = new_BB(module, main_fn_name, 0, 0);
-  bb_false = new_BB(module, main_fn_name, 0, 0);
-  bb_merge = new_BB(module, main_fn_name, 0, 1);
+  bb_entry = new_BB(module, main_fn_name);
+  bb_true = new_BB(module, main_fn_name);
+  bb_false = new_BB(module, main_fn_name);
+  bb_merge = new_BB(module, main_fn_name);
   TEST_ASSERT(bb_entry != SSA_INVALID_BB);
   TEST_ASSERT(bb_true != SSA_INVALID_BB);
   TEST_ASSERT(bb_false != SSA_INVALID_BB);
   TEST_ASSERT(bb_merge != SSA_INVALID_BB);
+  TEST_ASSERT(set_entry_BB(module, main_fn_name, bb_entry) == 1);
+  TEST_ASSERT(set_exit_BB(module, main_fn_name, bb_merge) == 1);
 
   main_fn = &module->functions[main_fn_name];
 
@@ -274,7 +292,7 @@ static int test_branch_and_phi(void)
   TEST_ASSERT(count_phi_options(main_fn->values[phi_val].expr.phi.options) == 2);
 
   TEST_ASSERT(emit_return(module, main_fn_name, bb_merge, phi_val) == 0);
-  TEST_ASSERT(main_fn->basic_blocks[bb_merge].instructions_count == 2);
+  TEST_ASSERT(get_instr_count(main_fn, bb_merge) == 2);
   TEST_ASSERT(get_instr(main_fn, bb_merge, 0)->kind == SSA_INSTR_VAL);
   TEST_ASSERT(get_instr(main_fn, bb_merge, 0)->val == phi_val);
   term = get_terminator(main_fn, bb_merge);
@@ -317,12 +335,12 @@ static int test_invalid_inputs(void)
   TEST_ASSERT(takes_i32 != SSA_INVALID_FUNC);
   TEST_ASSERT(void_fn != SSA_INVALID_FUNC);
 
-  bb_entry = new_BB(module, fn, 1, 0);
-  bb_exit = new_BB(module, fn, 0, 1);
+  bb_entry = new_BB(module, fn);
+  bb_exit = new_BB(module, fn);
   TEST_ASSERT(bb_entry != SSA_INVALID_BB);
   TEST_ASSERT(bb_exit != SSA_INVALID_BB);
-  TEST_ASSERT(new_BB(module, fn, 1, 0) == SSA_INVALID_BB);
-  TEST_ASSERT(new_BB(module, fn, 0, 1) == SSA_INVALID_BB);
+  TEST_ASSERT(set_entry_BB(module, fn, bb_entry) == 1);
+  TEST_ASSERT(set_exit_BB(module, fn, bb_exit) == 1);
 
   int_val = emit_const_assign(module, fn, bb_entry, SSA_i32, make_i32(7));
   TEST_ASSERT(int_val != SSA_INVALID_VAL);
@@ -381,10 +399,12 @@ static int test_const_assign(void)
   fn = new_func(module, "const_main", SSA_i32, 0, NULL, 1);
   TEST_ASSERT(fn != SSA_INVALID_FUNC);
 
-  bb_entry = new_BB(module, fn, 1, 0);
-  bb_exit = new_BB(module, fn, 0, 1);
+  bb_entry = new_BB(module, fn);
+  bb_exit = new_BB(module, fn);
   TEST_ASSERT(bb_entry != SSA_INVALID_BB);
   TEST_ASSERT(bb_exit != SSA_INVALID_BB);
+  TEST_ASSERT(set_entry_BB(module, fn, bb_entry) == 1);
+  TEST_ASSERT(set_exit_BB(module, fn, bb_exit) == 1);
 
   f = &module->functions[fn];
 
@@ -416,14 +436,14 @@ static int test_const_assign(void)
   TEST_ASSERT(emit_goto(module, fn, bb_entry, bb_exit) == 0);
   TEST_ASSERT(emit_return(module, fn, bb_exit, v2) == 0);
 
-  TEST_ASSERT(f->basic_blocks[bb_entry].instructions_count == 3);
+  TEST_ASSERT(get_instr_count(f, bb_entry) == 3);
   TEST_ASSERT(get_instr(f, bb_entry, 0)->val == v0);
   TEST_ASSERT(get_instr(f, bb_entry, 1)->val == v1);
   term = get_terminator(f, bb_entry);
   TEST_ASSERT(term != NULL);
   TEST_ASSERT(term->type == SSA_TERM_GOTO);
 
-  TEST_ASSERT(f->basic_blocks[bb_exit].instructions_count == 2);
+  TEST_ASSERT(get_instr_count(f, bb_exit) == 2);
   TEST_ASSERT(get_instr(f, bb_exit, 0)->val == v2);
   term = get_terminator(f, bb_exit);
   TEST_ASSERT(term != NULL);
@@ -451,10 +471,12 @@ static int test_void_value(void)
   fn = new_func(module, "void_main", SSA_void, 0, NULL, 1);
   TEST_ASSERT(fn != SSA_INVALID_FUNC);
 
-  bb_entry = new_BB(module, fn, 1, 0);
-  bb_exit = new_BB(module, fn, 0, 1);
+  bb_entry = new_BB(module, fn);
+  bb_exit = new_BB(module, fn);
   TEST_ASSERT(bb_entry != SSA_INVALID_BB);
   TEST_ASSERT(bb_exit != SSA_INVALID_BB);
+  TEST_ASSERT(set_entry_BB(module, fn, bb_entry) == 1);
+  TEST_ASSERT(set_exit_BB(module, fn, bb_exit) == 1);
 
   TEST_ASSERT(emit_goto(module, fn, bb_entry, bb_exit) == 0);
   TEST_ASSERT(emit_return(module, fn, bb_exit, SSA_VALUE_VOID) == 0);
@@ -489,8 +511,10 @@ static int test_dump_func_args(void)
   TEST_ASSERT(module->functions[fn].values[0].type == SSA_i32);
   TEST_ASSERT(module->functions[fn].values[1].type == SSA_i1);
 
-  bb_entry = new_BB(module, fn, 1, 1);
+  bb_entry = new_BB(module, fn);
   TEST_ASSERT(bb_entry != SSA_INVALID_BB);
+  TEST_ASSERT(set_entry_BB(module, fn, bb_entry) == 1);
+  TEST_ASSERT(set_exit_BB(module, fn, bb_entry) == 1);
   TEST_ASSERT(emit_return(module, fn, bb_entry, SSA_VALUE_VOID) == 0);
 
   fp = tmpfile();
@@ -519,10 +543,12 @@ static int test_bool_cast_dump(void)
   fn = new_func(module, "bool_cast_main", SSA_i1, 0, NULL, 1);
   TEST_ASSERT(fn != SSA_INVALID_FUNC);
 
-  bb_entry = new_BB(module, fn, 1, 0);
-  bb_exit = new_BB(module, fn, 0, 1);
+  bb_entry = new_BB(module, fn);
+  bb_exit = new_BB(module, fn);
   TEST_ASSERT(bb_entry != SSA_INVALID_BB);
   TEST_ASSERT(bb_exit != SSA_INVALID_BB);
+  TEST_ASSERT(set_entry_BB(module, fn, bb_entry) == 1);
+  TEST_ASSERT(set_exit_BB(module, fn, bb_exit) == 1);
 
   v0 = emit_const_assign(module, fn, bb_entry, SSA_i64, make_i64(42));
   TEST_ASSERT(v0 != SSA_INVALID_VAL);

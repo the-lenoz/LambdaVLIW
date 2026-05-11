@@ -2,14 +2,19 @@
 #define SSA_D
 
 #include <stdint.h>
+
+typedef struct _instr SSAInstr;
+
 typedef unsigned int SSAValName;
 typedef unsigned int SSABasicBlockName;
 typedef unsigned int SSAFuncName;
+typedef SSAInstr *SSAInstrName;
 
 #define SSA_INVALID_VAL ((SSAValName)~0u)
 #define SSA_VALUE_VOID ((SSAValName)~1u)
 #define SSA_INVALID_BB ((SSABasicBlockName)~0u)
 #define SSA_INVALID_FUNC ((SSAFuncName)~0u)
+#define SSA_INVALID_INSTR NULL
 
 typedef struct _SSAModule SSAModule;
 
@@ -119,21 +124,23 @@ typedef enum
   SSA_INSTR_TERM
 } SSAInstrKind;
 
-typedef struct
+struct _instr
 {
   SSAInstrKind kind;
   SSAValName val;
   _FuncCall call;
   SSABlockTerminator term;
-} SSAInstr;
+
+  SSAInstrName prev;
+  SSAInstrName next;
+};
 
 typedef struct
 {
   SSAFuncName parent_name;
 
-  unsigned int instructions_count;
-  unsigned int instructions_cap;
-  SSAInstr *instructions;
+  SSAInstrName first_instr;
+  SSAInstrName last_instr;
 
 } SSABasicBlock;
 
@@ -174,7 +181,11 @@ SSAFuncName new_func(SSAModule *module, const char *name,
                      unsigned int args_count,
                      const SSAValueType *arg_types, int is_global);
 
-SSABasicBlockName new_BB(SSAModule *module, SSAFuncName func, int is_entry, int is_exit);
+SSABasicBlockName new_BB(SSAModule *module, SSAFuncName func);
+
+int set_entry_BB(SSAModule *module, SSAFuncName func, SSABasicBlockName BB);
+int set_exit_BB(SSAModule *module, SSAFuncName func, SSABasicBlockName BB);
+
 SSAValName emit_phi_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
                            SSAValueType type);
 SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
@@ -195,11 +206,29 @@ int emit_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSABasi
 int emit_return(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName ret_name);
 
 int add_phi_option(SSAModule *module, SSAFuncName fn, SSAValName val_name, PhiPair pair);
+int remove_phi_option_by_pred(SSAModule *module, SSAFuncName fn, SSAValName val_name, SSABasicBlockName pred);
 int ArgList_append(ArgList **list, SSAValName arg_name);
 
+int rename_all_val_uses(SSAModule *module, SSAFuncName func, SSAValName old, SSAValName new);
 
 SSAFunc *get_func(SSAModule *module, SSAFuncName fn);
-int bb_has_terminator(const SSAFunc *func, SSABasicBlockName bb);
-SSAInstr get_BB_terminator(SSAModule *module, SSAFuncName fn, SSABasicBlockName BB);
+int bb_has_terminator(SSAModule *module, SSAFuncName func, SSABasicBlockName bb);
+SSAInstrName get_BB_terminator(SSAModule *module, SSAFuncName fn, SSABasicBlockName BB);
+int clear_BB_terminator(SSAModule *module, SSAFuncName fn, SSABasicBlockName BB);
+
+unsigned get_BB_instr_count(SSAModule *module, SSAFuncName func, SSABasicBlockName BB);
+SSABasicBlockName get_val_declaration_BB(SSAModule *module, SSAFuncName func, SSAValName value);
+SSAInstrName get_val_declaration_instr(SSAModule *module, SSAFuncName func, SSAValName value);
+
+int insert_instr_before(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
+                        SSAInstrName place, SSAInstr instr);
+int insert_instr_after(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
+                       SSAInstrName place, SSAInstr instr);
+int replace_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
+                  SSAInstrName place, SSAInstr instr);
+int remove_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAInstrName instr);
+
+
+int validate_func(SSAModule *module, SSAFuncName func);
 
 #endif
