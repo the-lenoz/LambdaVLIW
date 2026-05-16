@@ -174,6 +174,12 @@ struct _SSAModule
   SSAFunc *functions;
 };
 
+typedef struct _i_list
+{
+  SSAInstrName instr;
+  struct _i_list *next;
+} SSAInstrList;
+
 SSAModule *new_module();
 void destroy_module(SSAModule *module);
 SSAFuncName new_func(SSAModule *module, const char *name,
@@ -209,6 +215,10 @@ int add_phi_option(SSAModule *module, SSAFuncName fn, SSAValName val_name, PhiPa
 int remove_phi_option_by_pred(SSAModule *module, SSAFuncName fn, SSAValName val_name, SSABasicBlockName pred);
 int ArgList_append(ArgList **list, SSAValName arg_name);
 
+int SSAInstrList_append(SSAInstrList **list, SSAInstrName instr);
+void SSAInstrList_destroy(SSAInstrList *list);
+
+SSAInstrList *find_all_val_usages(SSAModule *module, SSAFuncName func, SSAValName val);
 int rename_all_val_uses(SSAModule *module, SSAFuncName func, SSAValName old, SSAValName new);
 
 SSAFunc *get_func(SSAModule *module, SSAFuncName fn);
@@ -227,7 +237,6 @@ int insert_instr_after(SSAModule *module, SSAFuncName func, SSABasicBlockName BB
 int replace_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
                   SSAInstrName place, SSAInstr instr);
 int remove_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAInstrName instr);
-
 
 int validate_func(SSAModule *module, SSAFuncName func);
 

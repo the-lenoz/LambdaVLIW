@@ -732,6 +732,29 @@ int ArgList_append(ArgList **list, SSAValName arg_name)
   return ArgList_append(&(*list)->next, arg_name);
 }
 
+int SSAInstrList_append(SSAInstrList **list, SSAInstrName instr)
+{
+  if (!list)
+    return 0;
+
+  SSAInstrList *l = malloc(sizeof(SSAInstrList));
+  if (!l)
+    return 0;
+  l->next = *list;
+  l->instr = instr;
+  *list = l;
+  return 1;
+}
+
+void SSAInstrList_destroy(SSAInstrList *list)
+{
+  if (!list)
+    return;
+  SSAInstrList *next = list->next;
+  free(list);
+  SSAInstrList_destroy(next);
+}
+
 int insert_instr_before(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
                         SSAInstrName place, SSAInstr instr)
 {
@@ -913,13 +936,13 @@ static int replace_in_call(SSAFunc *func, _FuncCall call, SSAValName old, SSAVal
   return changed;
 }
 
-static int replace_in_phi(SSAFunc *func, PhiList *options, SSAValName old, SSAValName new)
+static int replace_in_phi(SSAFunc *func, _PhiNode phi, SSAValName old, SSAValName new)
 {
   if (!func || !is_valid_value(func, old) || !is_valid_value(func, new))
     return 0;
 
   int changed = 0;
-  for (PhiList *option = options; option; option = option->next)
+  for (PhiList *option = phi.options; option; option = option->next)
     if (option->pair.value_name == old)
     {
       option->pair.value_name = new;
@@ -939,7 +962,7 @@ static int replace_in_val_def(SSAFunc *func, SSAValName def, SSAValName old, SSA
   case SSA_VALUE_CALL:
     return replace_in_call(func, val->expr.call, old, new);
   case SSA_VALUE_PHI:
-    return replace_in_phi(func, val->expr.phi.options, old, new);
+    return replace_in_phi(func, val->expr.phi, old, new);
   case SSA_VALUE_BOOL_CAST:
     if (val->expr.bool_val == old)
     {
@@ -973,11 +996,83 @@ static int replace_in_terminator(SSAFunc *func, SSABlockTerminator *term, SSAVal
       return 1;
     }
     return 0;
-  case SSA_TERM_GOTO:
-    return 0;
   default:
     return 0;
   }
+}
+
+static int is_used_in_call(SSAFunc *func, _FuncCall call, SSAValName val)
+{
+  if (!func || !is_valid_value(func, val))
+    return 0;
+
+  for (ArgList *arg = call.args; arg; arg = arg->next)
+    if (arg->name == val)
+      return 1;
+
+  return 0;
+}
+
+static int is_used_in_phi(SSAFunc *func, _PhiNode phi, SSAValName val)
+{
+  if (!func || !is_valid_value(func, val))
+    return 0;
+
+  for (PhiList *option = phi.options; option; option = option->next)
+    if (option->pair.value_name == val)
+      return 1;
+
+  return 0;
+}
+
+SSAInstrList *find_all_val_usages(SSAModule *module, SSAFuncName func, SSAValName val)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function || !is_valid_value(function, val))
+    return NULL;
+
+  SSAInstrList *result = NULL;
+
+  for (SSABasicBlock *bb = function->basic_blocks;
+       bb < function->basic_blocks + function->basic_blocks_count; ++bb)
+    for (SSAInstrName i = bb->first_instr; i; i = i->next)
+    {
+      switch (i->kind)
+      {
+      case SSA_INSTR_VAL:
+        if (!is_valid_value(function, i->val))
+          continue;
+        switch (function->values[i->val].kind)
+        {
+        case SSA_VALUE_BOOL_CAST:
+          if (function->values[i->val].expr.bool_val == val)
+            SSAInstrList_append(&result, i);
+          break;
+        case SSA_VALUE_CALL:
+          if (is_used_in_call(function, function->values[i->val].expr.call, val))
+            SSAInstrList_append(&result, i);
+          break;
+        case SSA_VALUE_PHI:
+          if (is_used_in_phi(function, function->values[i->val].expr.phi, val))
+            SSAInstrList_append(&result, i);
+          break;
+        default:
+          break;
+        }
+        break;
+      case SSA_INSTR_VOID_CALL:
+        if (is_used_in_call(function, i->call, val))
+          SSAInstrList_append(&result, i);
+        break;
+      case SSA_INSTR_TERM:
+        if (i->term.type == SSA_TERM_COND_GOTO && i->term.cond == val)
+          SSAInstrList_append(&result, i);
+        if (i->term.type == SSA_TERM_RETURN && i->term.ret_val == val)
+	  SSAInstrList_append(&result, i);
+        break;
+      }
+    }
+  return result;
 }
 
 int rename_all_val_uses(SSAModule *module, SSAFuncName func, SSAValName old, SSAValName new)
@@ -990,24 +1085,25 @@ int rename_all_val_uses(SSAModule *module, SSAFuncName func, SSAValName old, SSA
     return 0;
 
   int changed = 0;
-  for (SSABasicBlock *bb = function->basic_blocks;
-       bb < function->basic_blocks + function->basic_blocks_count; ++bb)
-    for (SSAInstrName i = bb->first_instr; i; i = i->next)
+  SSAInstrList *usages = find_all_val_usages(module, func, old);
+  for (SSAInstrList *u = usages; u; u = u->next)
+  {
+    SSAInstrName i = u->instr;
+    changed++;
+    switch (i->kind)
     {
-      switch (i->kind)
-      {
-      case SSA_INSTR_VAL:
-        changed += replace_in_val_def(function, i->val, old, new);
-        break;
-      case SSA_INSTR_VOID_CALL:
-        changed += replace_in_call(function, i->call, old, new);
-        break;
-      case SSA_INSTR_TERM:
-        changed += replace_in_terminator(function, &i->term, old, new);
-        break;
-      }
+    case SSA_INSTR_VAL:
+      replace_in_val_def(function, i->val, old, new);
+      break;
+    case SSA_INSTR_VOID_CALL:
+      replace_in_call(function, i->call, old, new);
+      break;
+    case SSA_INSTR_TERM:
+      replace_in_terminator(function, &i->term, old, new);
+      break;
     }
-
+  }
+  SSAInstrList_destroy(usages);
   return changed;
 }
 

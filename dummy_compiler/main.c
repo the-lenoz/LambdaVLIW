@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #endif
 #include "../parser/parser.h"
+#include "../optimizer/optimizer.h"
 #include <stdio.h>
 
 int compile(const char *source_path, const char *out_path)
@@ -26,6 +27,8 @@ int compile(const char *source_path, const char *out_path)
   if (!module)
     return fprintf(stderr, "Fatal: semanthic error.\n"), fclose(out_fp), -1;
 
+  optimize_module(module);
+  
 #ifdef DEBUG
   char *debug_path = calloc(strlen(out_path) + 5, sizeof(char));
   strcpy(debug_path, out_path);
@@ -39,7 +42,7 @@ int compile(const char *source_path, const char *out_path)
   }
   free(debug_path);
 #endif
-
+  
   if (!dummy_SSA_module_to_C(module, out_fp))
   {
     fclose(out_fp);

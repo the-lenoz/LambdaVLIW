@@ -1,0 +1,213 @@
+digraph SSA {
+  rankdir=TB;
+  newrank=true;
+  ranksep=0.9;
+  nodesep=0.35;
+  splines=true;
+  fontname="Helvetica";
+  node [fontname="Menlo"];
+  edge [fontname="Menlo"];
+  subgraph cluster_f0 {
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>+</B></FONT></TD></TR></TABLE>>;
+    f0_order [shape=point, style=invis, width=0, height=0, label=""];
+  }
+  subgraph cluster_f1 {
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>-</B></FONT></TD></TR></TABLE>>;
+    f1_order [shape=point, style=invis, width=0, height=0, label=""];
+  }
+  subgraph cluster_f2 {
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>*</B></FONT></TD></TR></TABLE>>;
+    f2_order [shape=point, style=invis, width=0, height=0, label=""];
+  }
+  subgraph cluster_f3 {
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>/</B></FONT></TD></TR></TABLE>>;
+    f3_order [shape=point, style=invis, width=0, height=0, label=""];
+  }
+  subgraph cluster_f4 {
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>&gt;</B></FONT></TD></TR></TABLE>>;
+    f4_order [shape=point, style=invis, width=0, height=0, label=""];
+  }
+  subgraph cluster_f5 {
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>&lt;</B></FONT></TD></TR></TABLE>>;
+    f5_order [shape=point, style=invis, width=0, height=0, label=""];
+  }
+  subgraph cluster_f6 {
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>=</B></FONT></TD></TR></TABLE>>;
+    f6_order [shape=point, style=invis, width=0, height=0, label=""];
+  }
+  subgraph cluster_f7 {
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>cons</B></FONT></TD></TR></TABLE>>;
+    f7_order [shape=point, style=invis, width=0, height=0, label=""];
+  }
+  subgraph cluster_f8 {
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>print_int</B></FONT></TD></TR></TABLE>>;
+    f8_order [shape=point, style=invis, width=0, height=0, label=""];
+  }
+  subgraph cluster_f9 {
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>car</B></FONT></TD></TR></TABLE>>;
+    f9_order [shape=point, style=invis, width=0, height=0, label=""];
+  }
+  subgraph cluster_f10 {
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>cdr</B></FONT></TD></TR></TABLE>>;
+    f10_order [shape=point, style=invis, width=0, height=0, label=""];
+  }
+  subgraph cluster_f11 {
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>heavy_sum</B></FONT></TD></TR></TABLE>>;
+    f11_order [shape=point, style=invis, width=0, height=0, label=""];
+    f11_entry [shape=circle, fixedsize=true, width=0.34, label="", style=filled, fillcolor="#81c784", color="#2e7d32"];
+    f11_bb0 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#f8fafb">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#eceff1"><B>bb0</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v3 = const 1</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v4 = call &lt;(v12, v3) [const]</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v5 = bool-cast v4</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">if v5 then bb3 else bb4</FONT></TD></TR>
+      </TABLE>
+    >];
+    f11_bb1 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#fff8ef">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#ffe0b2"><B>bb1 [exit]</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">return v2</FONT></TD></TR>
+      </TABLE>
+    >];
+    f11_bb2 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#f8fafb">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#eceff1"><B>bb2</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v2 = phi(bb5:v11, bb3:v13)</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">goto bb1</FONT></TD></TR>
+      </TABLE>
+    >];
+    f11_bb3 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#f8fafb">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#eceff1"><B>bb3</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">goto bb2</FONT></TD></TR>
+      </TABLE>
+    >];
+    f11_bb4 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#f8fafb">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#eceff1"><B>bb4</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v6 = const 1</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v7 = bool-cast v6</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">if v7 then bb5 else bb6</FONT></TD></TR>
+      </TABLE>
+    >];
+    f11_bb5 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#f8fafb">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#eceff1"><B>bb5</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v8 = const 1</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v9 = call -(v12, v8) [const]</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v10 = call +(v12, v13) [const]</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">goto bb8</FONT></TD></TR>
+      </TABLE>
+    >];
+    f11_bb6 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#f8fafb">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#eceff1"><B>bb6</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">goto bb2</FONT></TD></TR>
+      </TABLE>
+    >];
+    f11_bb7 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#edf7ee">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#c8e6c9"><B>bb7 [entry]</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">goto bb8</FONT></TD></TR>
+      </TABLE>
+    >];
+    f11_bb8 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#f8fafb">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#eceff1"><B>bb8</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v12 = phi(bb5:v9, bb7:v0)</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v13 = phi(bb5:v10, bb7:v1)</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">goto bb0</FONT></TD></TR>
+      </TABLE>
+    >];
+    f11_entry -> f11_bb7 [label="entry", color="#2e7d32", penwidth=1.4];
+    f11_bb0 -> f11_bb3 [label="T", color="#2e7d32", penwidth=1.3];
+    f11_bb0 -> f11_bb4 [label="F", color="#c62828", penwidth=1.3];
+    f11_bb2 -> f11_bb1 [label="goto", color="#1565c0"];
+    f11_bb3 -> f11_bb2 [label="goto", color="#1565c0"];
+    f11_bb4 -> f11_bb5 [label="T", color="#2e7d32", penwidth=1.3];
+    f11_bb4 -> f11_bb6 [label="F", color="#c62828", penwidth=1.3];
+    f11_bb5 -> f11_bb8 [label="goto", color="#1565c0"];
+    f11_bb6 -> f11_bb2 [label="goto", color="#1565c0"];
+    f11_bb7 -> f11_bb8 [label="goto", color="#1565c0"];
+    f11_bb8 -> f11_bb0 [label="goto", color="#1565c0"];
+    f11_ret [shape=doublecircle, label="return", color="#6a1b9a", penwidth=1.4];
+    f11_bb1 -> f11_ret [style=dashed, color="#6a1b9a", label="v2"];
+  }
+  subgraph cluster_f12 {
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>main</B></FONT></TD></TR></TABLE>>;
+    f12_order [shape=point, style=invis, width=0, height=0, label=""];
+    f12_entry [shape=circle, fixedsize=true, width=0.34, label="", style=filled, fillcolor="#81c784", color="#2e7d32"];
+    f12_bb0 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#edf7ee">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#c8e6c9"><B>bb0 [entry]</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v2 = const 1000000000</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v3 = const 0</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v4 = call heavy_sum(v2, v3)</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">v5 = call print_int(v4)</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">goto bb1</FONT></TD></TR>
+      </TABLE>
+    >];
+    f12_bb1 [shape=plain, margin=0, label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#455a64" BGCOLOR="#fff8ef">
+        <TR><TD ALIGN="LEFT" BGCOLOR="#ffe0b2"><B>bb1 [exit]</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT FACE="Menlo">return v5</FONT></TD></TR>
+      </TABLE>
+    >];
+    f12_entry -> f12_bb0 [label="entry", color="#2e7d32", penwidth=1.4];
+    f12_bb0 -> f12_bb1 [label="goto", color="#1565c0"];
+    f12_ret [shape=doublecircle, label="return", color="#6a1b9a", penwidth=1.4];
+    f12_bb1 -> f12_ret [style=dashed, color="#6a1b9a", label="v5"];
+  }
+  f0_order -> f1_order [style=invis, weight=200, minlen=2];
+  f1_order -> f2_order [style=invis, weight=200, minlen=2];
+  f2_order -> f3_order [style=invis, weight=200, minlen=2];
+  f3_order -> f4_order [style=invis, weight=200, minlen=2];
+  f4_order -> f5_order [style=invis, weight=200, minlen=2];
+  f5_order -> f6_order [style=invis, weight=200, minlen=2];
+  f6_order -> f7_order [style=invis, weight=200, minlen=2];
+  f7_order -> f8_order [style=invis, weight=200, minlen=2];
+  f8_order -> f9_order [style=invis, weight=200, minlen=2];
+  f9_order -> f10_order [style=invis, weight=200, minlen=2];
+  f10_order -> f11_order [style=invis, weight=200, minlen=2];
+  f11_order -> f12_order [style=invis, weight=200, minlen=2];
+}

@@ -8,15 +8,17 @@ digraph SSA {
   node [fontname="Menlo"];
   edge [fontname="Menlo"];
   subgraph cluster_f0 {
-    color="#90a4ae"; style="rounded,filled"; fillcolor="#f3f7fa"; penwidth=1.4;
-    margin=16;
-    labelloc=t; label="callee";
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>callee</B></FONT></TD></TR></TABLE>>;
     f0_order [shape=point, style=invis, width=0, height=0, label=""];
   }
   subgraph cluster_f1 {
-    color="#90a4ae"; style="rounded,filled"; fillcolor="#f3f7fa"; penwidth=1.4;
-    margin=16;
-    labelloc=t; label="main";
+    color="#607d8b"; pencolor="#607d8b"; style=rounded; bgcolor="#f3f7fa"; penwidth=1.6;
+    margin=18;
+    labelloc=t; labeljust=l;
+    label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"><TR><TD ALIGN="LEFT"><FONT FACE="Helvetica" POINT-SIZE="16"><B>main</B></FONT></TD></TR></TABLE>>;
     f1_order [shape=point, style=invis, width=0, height=0, label=""];
     f1_entry [shape=circle, fixedsize=true, width=0.34, label="", style=filled, fillcolor="#81c784", color="#2e7d32"];
     f1_bb0 [shape=plain, margin=0, label=<

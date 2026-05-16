@@ -376,11 +376,15 @@ static int gv_emit_function_cluster(FILE *out_fp, const SSAModule *module, SSAFu
     return -1;
 
   if (fprintf(out_fp, "  subgraph cluster_f%u {\n", fn) < 0 ||
-      fputs("    color=\"#90a4ae\"; style=\"rounded,filled\"; fillcolor=\"#f3f7fa\"; penwidth=1.4;\n", out_fp) == EOF ||
-      fputs("    margin=16;\n", out_fp) == EOF ||
-      fputs("    labelloc=t; label=\"", out_fp) == EOF ||
-      gv_print_dot_escaped(out_fp, func->name) < 0 ||
-      fputs("\";\n", out_fp) == EOF)
+      fputs("    color=\"#607d8b\"; pencolor=\"#607d8b\"; style=rounded; bgcolor=\"#f3f7fa\"; penwidth=1.6;\n", out_fp) == EOF ||
+      fputs("    margin=18;\n", out_fp) == EOF ||
+      fputs("    labelloc=t; labeljust=l;\n", out_fp) == EOF ||
+      fputs("    label=<", out_fp) == EOF ||
+      fputs("<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"0\">", out_fp) == EOF ||
+      fputs("<TR><TD ALIGN=\"LEFT\"><FONT FACE=\"Helvetica\" POINT-SIZE=\"16\"><B>", out_fp) == EOF ||
+      gv_print_html_escaped(out_fp, func->name) < 0 ||
+      fputs("</B></FONT></TD></TR>", out_fp) == EOF ||
+      fputs("</TABLE>>;\n", out_fp) == EOF)
     return -1;
 
   if (fprintf(out_fp, "    f%u_order [shape=point, style=invis, width=0, height=0, label=\"\"];\n", fn) < 0)
