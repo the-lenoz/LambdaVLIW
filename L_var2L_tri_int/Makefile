@@ -1,9 +1,26 @@
+CC ?= cc
+CFLAGS ?= -O2 -g
+LDFLAGS ?=
+DEPFLAGS ?= -MMD -MP
+
+OBJS := compiler.o
+DEPS := $(OBJS:.o=.d)
+EXT_OBJS := ../parser/parser.o ../parser/AST.o
+
+.PHONY: all clean deps
+
 all: compiler
 
-compiler: compiler.o 
-	$(MAKE) -C ../parser/
-	$(CC) $(CFLAGS) -o $@ $^ ../parser/parser.o ../parser/AST.o $(LDFLAGS)
+deps:
+	$(MAKE) -C ../parser all CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)"
+
+compiler: deps $(OBJS) $(EXT_OBJS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(EXT_OBJS) $(LDFLAGS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 clean:
-	rm *.o || true
-	rm compiler || true
+	rm -f $(OBJS) $(DEPS) compiler
+
+-include $(DEPS)

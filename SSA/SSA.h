@@ -238,6 +238,9 @@ int replace_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
                   SSAInstrName place, SSAInstr instr);
 int remove_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAInstrName instr);
 
+
+int is_valid_bb(SSAModule *module, SSAFuncName func, SSABasicBlockName bb);
+int is_valid_value(SSAModule *module, SSAFuncName func, SSAValName val);
 int validate_func(SSAModule *module, SSAFuncName func);
 
 #endif

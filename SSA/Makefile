@@ -1,11 +1,27 @@
-all: tests
+CC ?= cc
+CFLAGS ?= -O2 -g
+LDFLAGS ?=
+DEPFLAGS ?= -MMD -MP
 
-tests: tests.o SSA.o SSA_to_L_tri_call.o SSA_dump_graphviz.o
+LIB_OBJS := SSA.o SSA_to_L_tri_call.o SSA_dump_graphviz.o
+TEST_OBJS := tests.o
+OBJS := $(LIB_OBJS) $(TEST_OBJS)
+DEPS := $(OBJS:.o=.d)
+
+.PHONY: all tests dump clean
+
+all: $(LIB_OBJS)
+
+tests: $(TEST_OBJS) $(LIB_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 dump: tests
 	./tests
 
+%.o: %.c
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
+
 clean:
-	rm -f *.o
-	rm -f tests
+	rm -f $(OBJS) $(DEPS) tests
+
+-include $(DEPS)

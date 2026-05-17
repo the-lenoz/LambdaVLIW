@@ -47,20 +47,22 @@ SSAFunc *get_func(SSAModule *module, SSAFuncName func)
   return &module->functions[func];
 }
 
-static int is_valid_bb(const SSAFunc *func, SSABasicBlockName bb)
+int is_valid_bb(SSAModule *module, SSAFuncName func, SSABasicBlockName bb)
 {
-  return func && bb < func->basic_blocks_count;
+  SSAFunc *f = get_func(module, func);
+  return f && bb < f->basic_blocks_count;
 }
 
-static int is_valid_value(const SSAFunc *func, SSAValName value)
+int is_valid_value(SSAModule *module, SSAFuncName func, SSAValName value)
 {
-  return func && value < func->values_count && func->values[value].kind != SSA_VALUE_INVALID;
+  SSAFunc *f = get_func(module, func);  
+  return f && value < f->values_count && f->values[value].kind != SSA_VALUE_INVALID;
 }
 
 int bb_has_terminator(SSAModule *module, SSAFuncName func, SSABasicBlockName bb)
 {
   SSAFunc *function = get_func(module, func);
-  return is_valid_bb(function, bb) &&
+  return is_valid_bb(module, func, bb) &&
          function->basic_blocks[bb].first_instr != SSA_INVALID_INSTR &&
          function->basic_blocks[bb].last_instr != SSA_INVALID_INSTR &&
          function->basic_blocks[bb].last_instr->kind == SSA_INSTR_TERM;
@@ -79,7 +81,7 @@ SSAInstrName get_BB_terminator(SSAModule *module, SSAFuncName fn, SSABasicBlockN
 int clear_BB_terminator(SSAModule *module, SSAFuncName fn, SSABasicBlockName BB)
 {
   SSAFunc *function = get_func(module, fn);
-  if (!function || !is_valid_bb(function, BB))
+  if (!function || !is_valid_bb(module, fn, BB))
     return 0;
 
   if (!bb_has_terminator(module, fn, BB))
@@ -313,7 +315,7 @@ SSABasicBlockName new_BB(SSAModule *module, SSAFuncName func)
 int set_entry_BB(SSAModule *module, SSAFuncName func, SSABasicBlockName BB)
 {
   SSAFunc *function = get_func(module, func);
-  if (!function || !is_valid_bb(function, BB))
+  if (!function || !is_valid_bb(module, func, BB))
     return 0;
   function->entry_block = BB;
   return 1;
@@ -321,17 +323,18 @@ int set_entry_BB(SSAModule *module, SSAFuncName func, SSABasicBlockName BB)
 int set_exit_BB(SSAModule *module, SSAFuncName func, SSABasicBlockName BB)
 {
   SSAFunc *function = get_func(module, func);
-  if (!function || !is_valid_bb(function, BB))
+  if (!function || !is_valid_bb(module, func, BB))
     return 0;
   function->exit_block = BB;
   return 1;
 }
 
-static SSAInstrName add_instr(SSAFunc *func, SSABasicBlockName BB, SSAInstr instr)
+static SSAInstrName add_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAInstr instr)
 {
-  if (!func || !is_valid_bb(func, BB))
+  SSAFunc *f = get_func(module, func);
+  if (!is_valid_bb(module, func, BB))
     return SSA_INVALID_INSTR;
-  SSABasicBlock *block = &func->basic_blocks[BB];
+  SSABasicBlock *block = &f->basic_blocks[BB];
 
   SSAInstrName instr_name = malloc(sizeof(SSAInstr));
   if (!instr_name || !block)
@@ -355,7 +358,7 @@ unsigned get_BB_instr_count(SSAModule *module, SSAFuncName func, SSABasicBlockNa
   SSAFunc *function = get_func(module, func);
   unsigned count = 0;
 
-  if (!function || !is_valid_bb(function, BB))
+  if (!function || !is_valid_bb(module, func, BB))
     return 0;
 
   for (SSAInstrName instr = function->basic_blocks[BB].first_instr; instr != SSA_INVALID_INSTR; instr = instr->next)
@@ -367,7 +370,7 @@ unsigned get_BB_instr_count(SSAModule *module, SSAFuncName func, SSABasicBlockNa
 SSABasicBlockName get_val_declaration_BB(SSAModule *module, SSAFuncName func, SSAValName value)
 {
   SSAFunc *function = get_func(module, func);
-  if (!function || !is_valid_value(function, value))
+  if (!function || !is_valid_value(module, func, value))
     return SSA_INVALID_BB;
   return function->values[value].parent_name;
 }
@@ -377,11 +380,11 @@ SSAInstrName get_val_declaration_instr(SSAModule *module, SSAFuncName func, SSAV
   SSAFunc *function = get_func(module, func);
   SSABasicBlockName bb;
 
-  if (!function || !is_valid_value(function, value))
+  if (!function || !is_valid_value(module, func, value))
     return SSA_INVALID_INSTR;
 
   bb = function->values[value].parent_name;
-  if (!is_valid_bb(function, bb))
+  if (!is_valid_bb(module, func, bb))
     return SSA_INVALID_INSTR;
 
   for (SSAInstrName instr = function->basic_blocks[bb].first_instr; instr != SSA_INVALID_INSTR; instr = instr->next)
@@ -397,7 +400,7 @@ SSAValName emit_phi_assign(SSAModule *module, SSAFuncName func, SSABasicBlockNam
   SSAFunc *function = get_func(module, func);
   SSAValue value;
 
-  if (!function || !is_valid_bb(function, BB) || bb_has_terminator(module, func, BB) || type == SSA_void)
+  if (!function || !is_valid_bb(module, func, BB) || bb_has_terminator(module, func, BB) || type == SSA_void)
     return SSA_INVALID_VAL;
 
   value = (SSAValue){};
@@ -412,7 +415,7 @@ SSAValName emit_phi_assign(SSAModule *module, SSAFuncName func, SSABasicBlockNam
   if (val_name == SSA_INVALID_VAL)
     return val_name;
 
-  if (!add_instr(function, BB, (SSAInstr){SSA_INSTR_VAL, val_name, {}}))
+  if (!add_instr(module, func, BB, (SSAInstr){SSA_INSTR_VAL, val_name, {}}))
   {
     pop_value(function, val_name);
     return SSA_INVALID_VAL;
@@ -427,7 +430,7 @@ SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
   SSAFunc *function = get_func(module, func);
   SSAValue value;
 
-  if (!function || !is_valid_bb(function, BB) || bb_has_terminator(module, func, BB))
+  if (!function || !is_valid_bb(module, func, BB) || bb_has_terminator(module, func, BB))
     return SSA_INVALID_VAL;
   SSAFunc *calee_func = get_func(module, callee);
   if (!calee_func || calee_func->return_type == SSA_void)
@@ -436,7 +439,7 @@ SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
   unsigned int i = 0;
   for (ArgList *arg = arg_list; arg; arg = arg->next, i++)
   {
-    if (!is_valid_value(function, arg->name) ||
+    if (!is_valid_value(module, func, arg->name) ||
         i >= calee_func->args_count ||
         function->values[arg->name].type != calee_func->arg_types[i])
       return SSA_INVALID_VAL;
@@ -457,7 +460,7 @@ SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
   if (val_name == SSA_INVALID_VAL)
     return val_name;
 
-  if (!add_instr(function, BB, (SSAInstr){SSA_INSTR_VAL, val_name, {}}))
+  if (!add_instr(module, func, BB, (SSAInstr){SSA_INSTR_VAL, val_name, {}}))
   {
     pop_value(function, val_name);
     return SSA_INVALID_VAL;
@@ -480,7 +483,7 @@ SSAValName emit_const_assign(SSAModule *module, SSAFuncName func,
   SSAFunc *function = get_func(module, func);
   SSAValue ssa_value;
 
-  if (!function || !is_valid_bb(function, BB) || type == SSA_void || bb_has_terminator(module, func, BB))
+  if (!function || !is_valid_bb(module, func, BB) || type == SSA_void || bb_has_terminator(module, func, BB))
     return SSA_INVALID_VAL;
 
   ssa_value = (SSAValue){};
@@ -495,7 +498,7 @@ SSAValName emit_const_assign(SSAModule *module, SSAFuncName func,
   if (val_name == SSA_INVALID_VAL)
     return val_name;
 
-  if (!add_instr(function, BB, (SSAInstr){SSA_INSTR_VAL, val_name, {}, {}}))
+  if (!add_instr(module, func, BB, (SSAInstr){SSA_INSTR_VAL, val_name, {}, {}}))
   {
     pop_value(function, val_name);
     return SSA_INVALID_VAL;
@@ -507,7 +510,7 @@ SSAValName emit_bool_cast_assign(SSAModule *module, SSAFuncName func,
                                  SSABasicBlockName BB, SSAValName val, SSAValueType type)
 {
   SSAFunc *function = get_func(module, func);
-  if (!function || !is_valid_bb(function, BB) || type == SSA_void || bb_has_terminator(module, func, BB))
+  if (!function || !is_valid_bb(module, func, BB) || type == SSA_void || bb_has_terminator(module, func, BB))
     return SSA_INVALID_VAL;
 
   SSAValue value = (SSAValue){
@@ -522,7 +525,7 @@ SSAValName emit_bool_cast_assign(SSAModule *module, SSAFuncName func,
   if (val_name == SSA_INVALID_VAL)
     return val_name;
 
-  if (!add_instr(function, BB, (SSAInstr){SSA_INSTR_VAL, val_name, {}, {}}))
+  if (!add_instr(module, func, BB, (SSAInstr){SSA_INSTR_VAL, val_name, {}, {}}))
   {
     pop_value(function, val_name);
     return SSA_INVALID_VAL;
@@ -537,7 +540,7 @@ int emit_void_call(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
   SSAFunc *function = get_func(module, func);
   SSAValue value;
 
-  if (!function || !is_valid_bb(function, BB))
+  if (!function || !is_valid_bb(module, func, BB))
     return -1;
   SSAFunc *calee_func = get_func(module, callee);
   if (!calee_func || calee_func->return_type != SSA_void)
@@ -546,7 +549,7 @@ int emit_void_call(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
   unsigned int i = 0;
   for (ArgList *arg = arg_list; arg; arg = arg->next, i++)
   {
-    if (!is_valid_value(function, arg->name) ||
+    if (!is_valid_value(module, func, arg->name) ||
         i >= calee_func->args_count ||
         function->values[arg->name].type != calee_func->arg_types[i])
       return -1;
@@ -554,7 +557,7 @@ int emit_void_call(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
   if (i != calee_func->args_count)
     return -1;
 
-  if (!add_instr(function, BB,
+  if (!add_instr(module, func, BB,
                  (SSAInstr){
                      SSA_INSTR_VOID_CALL,
                      SSA_INVALID_VAL,
@@ -573,9 +576,10 @@ int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SS
 
   if (!function)
     return -1;
-  if (!is_valid_bb(function, BB) || !is_valid_bb(function, true_dst) || !is_valid_bb(function, false_dst))
+  if (!is_valid_bb(module, func, BB) || !is_valid_bb(module, func, true_dst) ||
+      !is_valid_bb(module, func, false_dst))
     return -1;
-  if (!is_valid_value(function, cond_name))
+  if (!is_valid_value(module, func, cond_name))
     return -1;
   if (bb_has_terminator(module, func, BB))
     return -1;
@@ -583,7 +587,7 @@ int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SS
   if (function->values[cond_name].type != SSA_i1)
     return -1;
 
-  if (!add_instr(function, BB,
+  if (!add_instr(module, func, BB,
                  (SSAInstr){
                      SSA_INSTR_TERM,
                      SSA_INVALID_VAL,
@@ -605,12 +609,12 @@ int emit_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSABasi
 
   if (!function)
     return -1;
-  if (!is_valid_bb(function, BB) || !is_valid_bb(function, dst))
+  if (!is_valid_bb(module, func, BB) || !is_valid_bb(module, func, dst))
     return -1;
   if (bb_has_terminator(module, func, BB))
     return -1;
 
-  if (!add_instr(function, BB,
+  if (!add_instr(module, func, BB,
                  (SSAInstr){
                      SSA_INSTR_TERM,
                      SSA_INVALID_VAL,
@@ -632,11 +636,11 @@ int emit_return(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAVa
 
   if (!function)
     return -1;
-  if (!is_valid_bb(function, BB))
+  if (!is_valid_bb(module, func, BB))
     return -1;
   if (function->exit_block == SSA_INVALID_BB || BB != function->exit_block)
     return -1;
-  if (!is_valid_value(function, ret_name) && function->return_type != SSA_void)
+  if (!is_valid_value(module, func, ret_name) && function->return_type != SSA_void)
     return -1;
   if (bb_has_terminator(module, func, BB))
     return -1;
@@ -648,7 +652,7 @@ int emit_return(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAVa
   else if (function->return_type != function->values[ret_name].type)
     return -1;
 
-  if (!add_instr(function, BB,
+  if (!add_instr(module, func, BB,
                  (SSAInstr){
                      SSA_INSTR_TERM,
                      SSA_INVALID_VAL,
@@ -670,11 +674,11 @@ int add_phi_option(SSAModule *module, SSAFuncName fn, SSAValName val_name, PhiPa
     return -1;
 
   SSAFunc *function = get_func(module, fn);
-  if (!function || !is_valid_value(function, val_name) ||
+  if (!function || !is_valid_value(module, fn, val_name) ||
       function->values[val_name].kind != SSA_VALUE_PHI)
     return -1;
 
-  if (!is_valid_value(function, pair.value_name) || !is_valid_bb(function, pair.previous_block_name))
+  if (!is_valid_value(module, fn, pair.value_name) || !is_valid_bb(module, fn, pair.previous_block_name))
     return -1;
 
   if (function->values[pair.value_name].type != function->values[val_name].type)
@@ -694,7 +698,7 @@ int add_phi_option(SSAModule *module, SSAFuncName fn, SSAValName val_name, PhiPa
 int remove_phi_option_by_pred(SSAModule *module, SSAFuncName fn, SSAValName val_name, SSABasicBlockName pred)
 {
   SSAFunc *function = get_func(module, fn);
-  if (!function || !is_valid_value(function, val_name) || !is_valid_bb(function, pred))
+  if (!function || !is_valid_value(module, fn, val_name) || !is_valid_bb(module, fn, pred))
     return 0;
 
   if (function->values[val_name].kind != SSA_VALUE_PHI)
@@ -759,7 +763,7 @@ int insert_instr_before(SSAModule *module, SSAFuncName func, SSABasicBlockName B
                         SSAInstrName place, SSAInstr instr)
 {
   SSAFunc *function = get_func(module, func);
-  if (!function || !is_valid_bb(function, BB))
+  if (!function || !is_valid_bb(module, func, BB))
     return 0;
 
   SSABasicBlock *bb = &function->basic_blocks[BB];
@@ -771,7 +775,7 @@ int insert_instr_before(SSAModule *module, SSAFuncName func, SSABasicBlockName B
   {
     if (instr.kind == SSA_INSTR_VAL)
     {
-      if (!is_valid_value(function, instr.val))
+      if (!is_valid_value(module, func, instr.val))
         return 0;
       function->values[instr.val].parent_name = BB;
     }
@@ -793,7 +797,7 @@ int insert_instr_before(SSAModule *module, SSAFuncName func, SSABasicBlockName B
     {
       if (instr.kind == SSA_INSTR_VAL)
       {
-        if (!is_valid_value(function, instr.val))
+        if (!is_valid_value(module, func, instr.val))
           return 0;
         function->values[instr.val].parent_name = BB;
       }
@@ -813,7 +817,7 @@ int insert_instr_after(SSAModule *module, SSAFuncName func, SSABasicBlockName BB
                        SSAInstrName place, SSAInstr instr)
 {
   SSAFunc *function = get_func(module, func);
-  if (!function || !is_valid_bb(function, BB))
+  if (!function || !is_valid_bb(module, func, BB))
     return 0;
 
   SSABasicBlock *bb = &function->basic_blocks[BB];
@@ -825,7 +829,7 @@ int insert_instr_after(SSAModule *module, SSAFuncName func, SSABasicBlockName BB
   {
     if (instr.kind == SSA_INSTR_VAL)
     {
-      if (!is_valid_value(function, instr.val))
+      if (!is_valid_value(module, func, instr.val))
         return 0;
       function->values[instr.val].parent_name = BB;
     }
@@ -846,7 +850,7 @@ int replace_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
                   SSAInstrName place, SSAInstr instr)
 {
   SSAFunc *function = get_func(module, func);
-  if (!function || !is_valid_bb(function, BB))
+  if (!function || !is_valid_bb(module, func, BB))
     return 0;
 
   SSABasicBlock *bb = &function->basic_blocks[BB];
@@ -856,7 +860,7 @@ int replace_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
     {
       if (instr.kind == SSA_INSTR_VAL)
       {
-        if (!is_valid_value(function, instr.val))
+        if (!is_valid_value(module, func, instr.val))
           return 0;
         function->values[instr.val].parent_name = BB;
       }
@@ -864,7 +868,7 @@ int replace_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
         destroy_arg_list(i->call.args);
       else if (i->kind == SSA_INSTR_VAL)
       {
-        if (!is_valid_value(function, i->val))
+        if (!is_valid_value(module, func, i->val))
           return 0;
         SSAValue *v = function->values + i->val;
         if (v->kind == SSA_VALUE_CALL)
@@ -885,7 +889,7 @@ int replace_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
 int remove_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAInstrName instr)
 {
   SSAFunc *function = get_func(module, func);
-  if (!function || !is_valid_bb(function, BB))
+  if (!function || !is_valid_bb(module, func, BB))
     return 0;
 
   SSABasicBlock *bb = &function->basic_blocks[BB];
@@ -906,7 +910,7 @@ int remove_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAI
         destroy_arg_list(i->call.args);
       else if (i->kind == SSA_INSTR_VAL)
       {
-        if (!is_valid_value(function, i->val))
+        if (!is_valid_value(module, func, i->val))
           return 0;
         SSAValue *v = function->values + i->val;
         if (v->kind == SSA_VALUE_CALL)
@@ -923,9 +927,6 @@ int remove_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAI
 
 static int replace_in_call(SSAFunc *func, _FuncCall call, SSAValName old, SSAValName new)
 {
-  if (!func || !is_valid_value(func, old) || !is_valid_value(func, new))
-    return 0;
-
   int changed = 0;
   for (ArgList *arg = call.args; arg; arg = arg->next)
     if (arg->name == old)
@@ -938,9 +939,6 @@ static int replace_in_call(SSAFunc *func, _FuncCall call, SSAValName old, SSAVal
 
 static int replace_in_phi(SSAFunc *func, _PhiNode phi, SSAValName old, SSAValName new)
 {
-  if (!func || !is_valid_value(func, old) || !is_valid_value(func, new))
-    return 0;
-
   int changed = 0;
   for (PhiList *option = phi.options; option; option = option->next)
     if (option->pair.value_name == old)
@@ -953,9 +951,6 @@ static int replace_in_phi(SSAFunc *func, _PhiNode phi, SSAValName old, SSAValNam
 
 static int replace_in_val_def(SSAFunc *func, SSAValName def, SSAValName old, SSAValName new)
 {
-  if (!func || !is_valid_value(func, old) || !is_valid_value(func, new) || !is_valid_value(func, def))
-    return 0;
-
   SSAValue *val = &func->values[def];
   switch (val->kind)
   {
@@ -977,9 +972,6 @@ static int replace_in_val_def(SSAFunc *func, SSAValName def, SSAValName old, SSA
 
 static int replace_in_terminator(SSAFunc *func, SSABlockTerminator *term, SSAValName old, SSAValName new)
 {
-  if (!func || !is_valid_value(func, old) || !is_valid_value(func, new))
-    return 0;
-
   switch (term->type)
   {
   case SSA_TERM_COND_GOTO:
@@ -1003,9 +995,6 @@ static int replace_in_terminator(SSAFunc *func, SSABlockTerminator *term, SSAVal
 
 static int is_used_in_call(SSAFunc *func, _FuncCall call, SSAValName val)
 {
-  if (!func || !is_valid_value(func, val))
-    return 0;
-
   for (ArgList *arg = call.args; arg; arg = arg->next)
     if (arg->name == val)
       return 1;
@@ -1015,9 +1004,6 @@ static int is_used_in_call(SSAFunc *func, _FuncCall call, SSAValName val)
 
 static int is_used_in_phi(SSAFunc *func, _PhiNode phi, SSAValName val)
 {
-  if (!func || !is_valid_value(func, val))
-    return 0;
-
   for (PhiList *option = phi.options; option; option = option->next)
     if (option->pair.value_name == val)
       return 1;
@@ -1028,7 +1014,7 @@ static int is_used_in_phi(SSAFunc *func, _PhiNode phi, SSAValName val)
 SSAInstrList *find_all_val_usages(SSAModule *module, SSAFuncName func, SSAValName val)
 {
   SSAFunc *function = get_func(module, func);
-  if (!function || !is_valid_value(function, val))
+  if (!function || !is_valid_value(module, func, val))
     return NULL;
 
   SSAInstrList *result = NULL;
@@ -1040,7 +1026,7 @@ SSAInstrList *find_all_val_usages(SSAModule *module, SSAFuncName func, SSAValNam
       switch (i->kind)
       {
       case SSA_INSTR_VAL:
-        if (!is_valid_value(function, i->val))
+        if (!is_valid_value(module, func, i->val))
           continue;
         switch (function->values[i->val].kind)
         {
@@ -1078,7 +1064,7 @@ SSAInstrList *find_all_val_usages(SSAModule *module, SSAFuncName func, SSAValNam
 int rename_all_val_uses(SSAModule *module, SSAFuncName func, SSAValName old, SSAValName new)
 {
   SSAFunc *function = get_func(module, func);
-  if (!function || !is_valid_value(function, new) || !is_valid_value(function, old))
+  if (!function || !is_valid_value(module, func, new) || !is_valid_value(module, func, old))
     return 0;
 
   if (function->values[old].type != function->values[new].type)
@@ -1111,3 +1097,12 @@ int validate_func(SSAModule *module, SSAFuncName func)
 {
   return 1;
 }
+
+SSABasicBlockName CFG_get_cond_joint(SSAModule *module, SSAFuncName func, SSAInstrName cond_goto)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function || cond_goto == SSA_INVALID_INSTR)
+    return SSA_INVALID_BB;
+  
+  
+}    

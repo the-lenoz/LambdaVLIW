@@ -1,4 +1,18 @@
-all: htable.o
+CC ?= cc
+CFLAGS ?= -O2 -g
+DEPFLAGS ?= -MMD -MP
+
+OBJS := htable.o
+DEPS := $(OBJS:.o=.d)
+
+.PHONY: all clean
+
+all: $(OBJS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 clean:
-	rm -f *.o
+	rm -f $(OBJS) $(DEPS)
+
+-include $(DEPS)
