@@ -1,0 +1,25 @@
+name: Mirror to GitLab/Gitea
+
+on:
+  push:
+    branches:
+      - '**' # Запускать при пуше в любую ветку
+  create:    # Запускать при создании новых тегов
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      # Полностью скачиваем репозиторий со всей историей и ветками
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Запускаем скрипт зеркалирования кода
+      - name: Push to mirror
+        run: |
+          TARGET_URL="://git.c-today.ru/the_lenoz/LambdaVLIW/"
+          
+          # Пушим всё содержимое, включая теги и ветки, используя сохраненный секрет
+          git push --mirror "https://${{ secrets.TARGET_TOKEN }}@${TARGET_URL}"
