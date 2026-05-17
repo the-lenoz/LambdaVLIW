@@ -1104,5 +1104,5 @@ SSABasicBlockName CFG_get_cond_joint(SSAModule *module, SSAFuncName func, SSAIns
   if (!function || cond_goto == SSA_INVALID_INSTR)
     return SSA_INVALID_BB;
   
-  
+  return SSA_INVALID_BB;
 }    
