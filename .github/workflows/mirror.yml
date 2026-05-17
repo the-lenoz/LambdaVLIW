@@ -21,6 +21,11 @@ jobs:
         run: |
           TARGET_URL="git.c-today.ru/the_lenoz/LambdaVLIW/"
           FULL_URL="https://${{ secrets.TARGET_TOKEN }}@${TARGET_URL}"
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          rm -rf .github
+          git add -A
+          git commit -m "Strip GitHub Actions for Gitea Mirror" --allow-empty
           git remote add target "${FULL_URL}"
           git push target --all --force
           git push target --tags --force
