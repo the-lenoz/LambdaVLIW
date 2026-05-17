@@ -21,8 +21,6 @@ jobs:
         run: |
           TARGET_URL="git.c-today.ru/the_lenoz/LambdaVLIW/"
           FULL_URL="https://${{ secrets.TARGET_TOKEN }}@${TARGET_URL}"
-	  
           git remote add target "${FULL_URL}"
-          
           git push target --all --force
           git push target --tags --force
