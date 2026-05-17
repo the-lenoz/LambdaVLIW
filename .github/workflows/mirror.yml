@@ -19,7 +19,7 @@ jobs:
       # Запускаем скрипт зеркалирования кода
       - name: Push to mirror
         run: |
-          TARGET_URL="://git.c-today.ru/the_lenoz/LambdaVLIW/"
+          TARGET_URL="git.c-today.ru/the_lenoz/LambdaVLIW/"
           
           # Пушим всё содержимое, включая теги и ветки, используя сохраненный секрет
           git push --mirror "https://${{ secrets.TARGET_TOKEN }}@${TARGET_URL}"
