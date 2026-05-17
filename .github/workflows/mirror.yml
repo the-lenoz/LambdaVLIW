@@ -20,6 +20,12 @@ jobs:
       - name: Push to mirror
         run: |
           TARGET_URL="git.c-today.ru/the_lenoz/LambdaVLIW/"
+          FULL_URL="https://${{ secrets.TARGET_TOKEN }}@${TARGET_URL}"
+	  # 1. Добавляем удаленный репозиторий
+          git remote add target "$FULL_URL"
           
-          # Пушим всё содержимое, включая теги и ветки, используя сохраненный секрет
-          git push --mirror "https://${{ secrets.TARGET_TOKEN }}@${TARGET_URL}"
+          # 2. Пушим только ветки
+          git push target --all --force
+          
+          # 3. Пушим только теги
+          git push target --tags --force
