@@ -55,7 +55,7 @@ int is_valid_bb(SSAModule *module, SSAFuncName func, SSABasicBlockName bb)
 
 int is_valid_value(SSAModule *module, SSAFuncName func, SSAValName value)
 {
-  SSAFunc *f = get_func(module, func);  
+  SSAFunc *f = get_func(module, func);
   return f && value < f->values_count && f->values[value].kind != SSA_VALUE_INVALID;
 }
 
@@ -124,6 +124,21 @@ static void destroy_BB(SSABasicBlock *bb)
   }
 }
 
+static void destroy_BBTree(BBTree *tree)
+{
+  if (!tree->ready)
+    return;
+  free(tree->child_arr);
+  free(tree->sibling_arr);
+  free(tree->parent_arr);
+}
+
+static void destroy_CFGInfo(CFGInfo *info)
+{
+  destroy_BBTree(&info->Dom_tree);
+  destroy_BBTree(&info->PDom_tree);
+}
+
 static void destroy_func(SSAFunc *func)
 {
   if (!func)
@@ -146,6 +161,9 @@ static void destroy_func(SSAFunc *func)
   free(func->basic_blocks);
   free(func->arg_types);
   free(func->arg_SSA_names);
+
+  destroy_CFGInfo(&func->CFG_info);
+
   *func = (SSAFunc){};
 }
 
@@ -285,6 +303,16 @@ SSAFuncName new_func(SSAModule *module, const char *name, SSAValueType return_ty
   func->entry_block = SSA_INVALID_BB;
   func->exit_block = SSA_INVALID_BB;
   func->parent_module = module;
+
+  func->CFG_info = (CFGInfo){
+      .Dom_tree = {.ready = 0,
+                   NULL,
+                   NULL,
+                   NULL},
+      .PDom_tree = {.ready = 0,
+                    NULL,
+                    NULL,
+                    NULL}};
 
   module->functions_count += 1;
   return module->functions_count - 1;
@@ -1054,7 +1082,7 @@ SSAInstrList *find_all_val_usages(SSAModule *module, SSAFuncName func, SSAValNam
         if (i->term.type == SSA_TERM_COND_GOTO && i->term.cond == val)
           SSAInstrList_append(&result, i);
         if (i->term.type == SSA_TERM_RETURN && i->term.ret_val == val)
-	  SSAInstrList_append(&result, i);
+          SSAInstrList_append(&result, i);
         break;
       }
     }
@@ -1098,11 +1126,29 @@ int validate_func(SSAModule *module, SSAFuncName func)
   return 1;
 }
 
+static int build_Dom_tree(SSAModule *module, SSAFuncName func)
+{
+  return 0;
+}
+static int build_PDom_tree(SSAModule *module, SSAFuncName func)
+{
+  return 0;
+}
+
+static int require_Dom_tree(SSAModule *module, SSAFuncName func)
+{
+  return 0;
+}
+static int require_IDom_tree(SSAModule *module, SSAFuncName func)
+{
+  return 0;
+}
+
 SSABasicBlockName CFG_get_cond_joint(SSAModule *module, SSAFuncName func, SSAInstrName cond_goto)
 {
   SSAFunc *function = get_func(module, func);
   if (!function || cond_goto == SSA_INVALID_INSTR)
     return SSA_INVALID_BB;
-  
+
   return SSA_INVALID_BB;
-}    
+}

@@ -146,6 +146,20 @@ typedef struct
 
 typedef struct
 {
+  int ready;
+  SSABasicBlockName *parent_arr;
+  SSABasicBlockName *child_arr;
+  SSABasicBlockName *sibling_arr;
+} BBTree;
+
+typedef struct
+{
+  BBTree Dom_tree;
+  BBTree PDom_tree;
+} CFGInfo;
+
+typedef struct
+{
   char *name;
   SSAValueType return_type;
   SSAValueType *arg_types;
@@ -163,6 +177,8 @@ typedef struct
 
   SSABasicBlockName entry_block;
   SSABasicBlockName exit_block;
+
+  CFGInfo CFG_info;
 
   SSAModule *parent_module;
 } SSAFunc;
@@ -237,7 +253,6 @@ int insert_instr_after(SSAModule *module, SSAFuncName func, SSABasicBlockName BB
 int replace_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
                   SSAInstrName place, SSAInstr instr);
 int remove_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAInstrName instr);
-
 
 int is_valid_bb(SSAModule *module, SSAFuncName func, SSABasicBlockName bb);
 int is_valid_value(SSAModule *module, SSAFuncName func, SSAValName val);
