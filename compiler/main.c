@@ -12,6 +12,7 @@ typedef struct
   const char *source_path;
   const char *out_path;
   const char *dot_path;
+  const char *dom_dot_path;
   int enable_optimizations;
   int use_dummy_backend;
 } CompileOptions;
@@ -19,12 +20,13 @@ typedef struct
 static int print_usage(const char *argv0)
 {
   return fprintf(stderr,
-                 "Usage: %s [--no-opt] [--dummy-backend|--system-backend] [--dump-dot path.dot] -o output.c input.lisp\n"
-                 "  -o <path>         Output C file. Use '-' for stdout.\n"
-                 "  --dump-dot <path> Dump SSA Graphviz DOT to file.\n"
-                 "  --no-opt          Disable optimizer passes.\n"
-                 "  --dummy-backend   Force dummy C backend.\n"
-                 "  --system-backend  Force structured backend (default).\n",
+                 "Usage: %s [--no-opt] [--dummy-backend|--system-backend] [--dump-dot path.dot] [--dump-dom-dot path.dot] -o output.c input.lisp\n"
+                 "  -o <path>             Output C file. Use '-' for stdout.\n"
+                 "  --dump-dot <path>     Dump SSA Graphviz DOT to file.\n"
+                 "  --dump-dom-dot <path> Dump SSA dominator tree DOT to file.\n"
+                 "  --no-opt              Disable optimizer passes.\n"
+                 "  --dummy-backend       Force dummy C backend.\n"
+                 "  --system-backend      Force structured backend (default).\n",
                  argv0);
 }
 
@@ -90,6 +92,26 @@ static int compile(const CompileOptions *options)
     return finish_compile(out_fp, must_close_out, debug_fp, -1);
   }
 
+  if (options->dom_dot_path)
+    debug_fp = fopen(options->dom_dot_path, "w");
+  if (debug_fp)
+  {
+    if (SSA_dump_module_dom_tree_graphviz(module, debug_fp) < 0)
+    {
+      fprintf(stderr, "Fatal: can't dump dominator tree to '%s'.\n", options->dom_dot_path);
+      destroy_module(module);
+      return finish_compile(out_fp, must_close_out, debug_fp, -1);
+    }
+    fclose(debug_fp);
+    debug_fp = NULL;
+  }
+  else if (options->dom_dot_path)
+  {
+    fprintf(stderr, "Fatal: can't open file '%s'.\n", options->dom_dot_path);
+    destroy_module(module);
+    return finish_compile(out_fp, must_close_out, debug_fp, -1);
+  }
+
   if (!SSA_module_to_C(module, out_fp, options->use_dummy_backend))
   {
     fprintf(stderr, "Fatal: invalid SSA produced.\n");
@@ -107,6 +129,7 @@ int main(int argc, char **argv)
       .source_path = NULL,
       .out_path = NULL,
       .dot_path = NULL,
+      .dom_dot_path = NULL,
       .enable_optimizations = 1,
       .use_dummy_backend = 0,
   };
@@ -124,6 +147,12 @@ int main(int argc, char **argv)
       if (i + 1 >= argc)
         return print_usage(argv[0]);
       options.dot_path = argv[++i];
+    }
+    else if (!strcmp(argv[i], "--dump-dom-dot"))
+    {
+      if (i + 1 >= argc)
+        return print_usage(argv[0]);
+      options.dom_dot_path = argv[++i];
     }
     else if (!strcmp(argv[i], "--no-opt"))
       options.enable_optimizations = 0;

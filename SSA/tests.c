@@ -138,6 +138,18 @@ static int count_phi_options(const PhiList *options)
   return count;
 }
 
+static int tree_has_child(const BBTree *tree, SSABasicBlockName parent, SSABasicBlockName child)
+{
+  if (!tree || !tree->child_arr || !tree->sibling_arr)
+    return 0;
+
+  for (SSABasicBlockName it = tree->child_arr[parent]; it != SSA_INVALID_BB; it = tree->sibling_arr[it])
+    if (it == child)
+      return 1;
+
+  return 0;
+}
+
 static int test_simple_call_and_return(void)
 {
   SSAModule *module;
@@ -577,6 +589,81 @@ static int test_bool_cast_dump(void)
   return 0;
 }
 
+static int test_dom_tree_and_dump(void)
+{
+  SSAModule *module;
+  SSAFuncName fn;
+  SSABasicBlockName bb_entry;
+  SSABasicBlockName bb_left;
+  SSABasicBlockName bb_right;
+  SSABasicBlockName bb_merge;
+  SSABasicBlockName bb_loop;
+  SSABasicBlockName bb_exit;
+  SSAValName cond;
+  SSAFunc *func;
+  FILE *fp;
+
+  module = new_module();
+  TEST_ASSERT(module != NULL);
+
+  fn = new_func(module, "dom_main", SSA_void, 0, NULL, 1);
+  TEST_ASSERT(fn != SSA_INVALID_FUNC);
+
+  bb_entry = new_BB(module, fn);
+  bb_left = new_BB(module, fn);
+  bb_right = new_BB(module, fn);
+  bb_merge = new_BB(module, fn);
+  bb_loop = new_BB(module, fn);
+  bb_exit = new_BB(module, fn);
+  TEST_ASSERT(bb_entry != SSA_INVALID_BB);
+  TEST_ASSERT(bb_left != SSA_INVALID_BB);
+  TEST_ASSERT(bb_right != SSA_INVALID_BB);
+  TEST_ASSERT(bb_merge != SSA_INVALID_BB);
+  TEST_ASSERT(bb_loop != SSA_INVALID_BB);
+  TEST_ASSERT(bb_exit != SSA_INVALID_BB);
+  TEST_ASSERT(set_entry_BB(module, fn, bb_entry) == 1);
+  TEST_ASSERT(set_exit_BB(module, fn, bb_exit) == 1);
+
+  cond = emit_const_assign(module, fn, bb_entry, SSA_i1, make_i1(1));
+  TEST_ASSERT(cond != SSA_INVALID_VAL);
+  TEST_ASSERT(emit_cond_goto(module, fn, bb_entry, cond, bb_left, bb_right) == 0);
+  TEST_ASSERT(emit_goto(module, fn, bb_left, bb_merge) == 0);
+  TEST_ASSERT(emit_goto(module, fn, bb_right, bb_merge) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, bb_merge, cond, bb_loop, bb_exit) == 0);
+  TEST_ASSERT(emit_goto(module, fn, bb_loop, bb_merge) == 0);
+  TEST_ASSERT(emit_return(module, fn, bb_exit, SSA_VALUE_VOID) == 0);
+
+  TEST_ASSERT(require_Dom_tree(module, fn) == 1);
+  func = &module->functions[fn];
+  TEST_ASSERT(func->CFG_info.valid_DOM == 1);
+  TEST_ASSERT(func->CFG_info.Dom_tree.parent_arr[bb_entry] == bb_entry);
+  TEST_ASSERT(func->CFG_info.Dom_tree.parent_arr[bb_left] == bb_entry);
+  TEST_ASSERT(func->CFG_info.Dom_tree.parent_arr[bb_right] == bb_entry);
+  TEST_ASSERT(func->CFG_info.Dom_tree.parent_arr[bb_merge] == bb_entry);
+  TEST_ASSERT(func->CFG_info.Dom_tree.parent_arr[bb_loop] == bb_merge);
+  TEST_ASSERT(func->CFG_info.Dom_tree.parent_arr[bb_exit] == bb_merge);
+  TEST_ASSERT(tree_has_child(&func->CFG_info.Dom_tree, bb_entry, bb_left));
+  TEST_ASSERT(tree_has_child(&func->CFG_info.Dom_tree, bb_entry, bb_right));
+  TEST_ASSERT(tree_has_child(&func->CFG_info.Dom_tree, bb_entry, bb_merge));
+  TEST_ASSERT(tree_has_child(&func->CFG_info.Dom_tree, bb_merge, bb_loop));
+  TEST_ASSERT(tree_has_child(&func->CFG_info.Dom_tree, bb_merge, bb_exit));
+
+  fp = tmpfile();
+  TEST_ASSERT(fp != NULL);
+  TEST_ASSERT(SSA_dump_func_dom_tree_graphviz(module, fn, fp) == 0);
+  TEST_ASSERT(stream_contains(fp, "digraph SSA_DOM"));
+  TEST_ASSERT(stream_contains(fp, "DOM tree: dom_main"));
+  TEST_ASSERT(stream_contains(fp, "f0_dom_bb0 -> f0_dom_bb1"));
+  TEST_ASSERT(stream_contains(fp, "f0_dom_bb0 -> f0_dom_bb2"));
+  TEST_ASSERT(stream_contains(fp, "f0_dom_bb0 -> f0_dom_bb3"));
+  TEST_ASSERT(stream_contains(fp, "f0_dom_bb3 -> f0_dom_bb4"));
+  TEST_ASSERT(stream_contains(fp, "f0_dom_bb3 -> f0_dom_bb5"));
+  fclose(fp);
+
+  destroy_module(module);
+  return 0;
+}
+
 typedef int (*test_fn)(void);
 
 typedef struct
@@ -595,6 +682,7 @@ int main(void)
       {"void_value", test_void_value},
       {"dump_func_args", test_dump_func_args},
       {"bool_cast_dump", test_bool_cast_dump},
+      {"dom_tree_and_dump", test_dom_tree_and_dump},
   };
   int failed = 0;
   size_t i;

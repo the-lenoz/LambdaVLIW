@@ -502,3 +502,133 @@ int SSA_dump_func_graphviz(const SSAModule *module, SSAFuncName func, FILE *out_
 
   return fputs("}\n", out_fp) == EOF ? -1 : 0;
 }
+
+static int gv_emit_dom_block_node(FILE *out_fp, const SSAFunc *func, SSAFuncName fn, SSABasicBlockName bb)
+{
+  const char *fill = "#f8fafb";
+  const char *color = "#455a64";
+
+  if (!out_fp || !func || bb >= func->basic_blocks_count)
+    return -1;
+
+  if (bb == func->entry_block)
+  {
+    fill = "#edf7ee";
+    color = "#2e7d32";
+  }
+  else if (bb == func->exit_block)
+  {
+    fill = "#fff8ef";
+    color = "#ef6c00";
+  }
+
+  if (fprintf(out_fp, "    f%u_dom_bb%u [label=\"bb%u", fn, bb, bb) < 0)
+    return -1;
+  if (bb == func->entry_block && fputs(" [entry]", out_fp) == EOF)
+    return -1;
+  if (bb == func->exit_block && fputs(" [exit]", out_fp) == EOF)
+    return -1;
+  if (fprintf(out_fp, "\", style=filled, fillcolor=\"%s\", color=\"%s\"];\n", fill, color) < 0)
+    return -1;
+
+  return 0;
+}
+
+static int gv_emit_dom_unavailable_node(FILE *out_fp, SSAFuncName fn)
+{
+  return fprintf(out_fp,
+                 "    f%u_dom_unavailable [label=\"<no CFG>\", style=filled, fillcolor=\"#eeeeee\", color=\"#9e9e9e\"];\n",
+                 fn) < 0
+             ? -1
+             : 0;
+}
+
+static int gv_emit_dom_function_cluster(FILE *out_fp, SSAModule *module, SSAFuncName fn)
+{
+  SSAFunc *func = get_func(module, fn);
+
+  if (!out_fp || !func || !func->name)
+    return -1;
+
+  if (fprintf(out_fp, "  subgraph cluster_f%u_dom {\n", fn) < 0 ||
+      fputs("    color=\"#5d4037\"; pencolor=\"#5d4037\"; style=rounded; bgcolor=\"#fffaf4\";\n", out_fp) == EOF ||
+      fputs("    margin=18; labelloc=t; labeljust=l;\n", out_fp) == EOF ||
+      fputs("    label=\"DOM tree: ", out_fp) == EOF ||
+      gv_print_dot_escaped(out_fp, func->name) < 0 ||
+      fputs("\";\n", out_fp) == EOF)
+    return -1;
+
+  if (func->basic_blocks_count == 0 || func->entry_block == SSA_INVALID_BB)
+  {
+    if (gv_emit_dom_unavailable_node(out_fp, fn) < 0)
+      return -1;
+    return fputs("  }\n", out_fp) == EOF ? -1 : 0;
+  }
+
+  if (!require_Dom_tree(module, fn))
+    return -1;
+
+  for (SSABasicBlockName bb = 0; bb < func->basic_blocks_count; ++bb)
+    if (gv_emit_dom_block_node(out_fp, func, fn, bb) < 0)
+      return -1;
+
+  for (SSABasicBlockName parent = 0; parent < func->basic_blocks_count; ++parent)
+  {
+    SSABasicBlockName child = func->CFG_info.Dom_tree.child_arr[parent];
+    while (child != SSA_INVALID_BB)
+    {
+      if (fprintf(out_fp, "    f%u_dom_bb%u -> f%u_dom_bb%u [color=\"#6d4c41\", penwidth=1.4];\n", fn,
+                  parent, fn, child) < 0)
+        return -1;
+      child = func->CFG_info.Dom_tree.sibling_arr[child];
+    }
+  }
+
+  return fputs("  }\n", out_fp) == EOF ? -1 : 0;
+}
+
+static int gv_begin_dom_graph(FILE *out_fp)
+{
+  if (!out_fp)
+    return -1;
+
+  if (fputs("digraph SSA_DOM {\n", out_fp) == EOF ||
+      fputs("  rankdir=TB;\n", out_fp) == EOF ||
+      fputs("  newrank=true;\n", out_fp) == EOF ||
+      fputs("  ranksep=0.8;\n", out_fp) == EOF ||
+      fputs("  nodesep=0.35;\n", out_fp) == EOF ||
+      fputs("  fontname=\"Helvetica\";\n", out_fp) == EOF ||
+      fputs("  node [shape=box, fontname=\"Menlo\", margin=0.12];\n", out_fp) == EOF ||
+      fputs("  edge [fontname=\"Menlo\"];\n", out_fp) == EOF)
+    return -1;
+
+  return 0;
+}
+
+int SSA_dump_func_dom_tree_graphviz(SSAModule *module, SSAFuncName func, FILE *out_fp)
+{
+  if (!module || !out_fp || !gv_get_func(module, func))
+    return -1;
+
+  if (gv_begin_dom_graph(out_fp) < 0)
+    return -1;
+  if (gv_emit_dom_function_cluster(out_fp, module, func) < 0)
+    return -1;
+
+  return fputs("}\n", out_fp) == EOF ? -1 : 0;
+}
+
+int SSA_dump_module_dom_tree_graphviz(SSAModule *module, FILE *out_fp)
+{
+  if (!module || !out_fp)
+    return -1;
+
+  if (gv_begin_dom_graph(out_fp) < 0)
+    return -1;
+
+  for (SSAFuncName fn = 0; fn < module->functions_count; ++fn)
+    if (gv_emit_dom_function_cluster(out_fp, module, fn) < 0)
+      return -1;
+
+  return fputs("}\n", out_fp) == EOF ? -1 : 0;
+}

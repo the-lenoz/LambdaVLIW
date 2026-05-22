@@ -126,21 +126,36 @@ static void destroy_BB(SSABasicBlock *bb)
 
 static void destroy_BBTree(BBTree *tree)
 {
-  if (!tree->ready)
+  if (!tree)
     return;
   free(tree->child_arr);
   free(tree->sibling_arr);
   free(tree->parent_arr);
 }
 
-static void destroy_CFGInfo(CFGInfo *info)
+static void destroy_CFGInfo(SSAModule *module, SSAFuncName func)
 {
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return;
+  CFGInfo *info = &function->CFG_info;
+  if (info->preds)
+    for (int i = 0; i < function->basic_blocks_count; ++i)
+      SSABasicBlockList_destroy(info->preds[i]);
+  free(info->preds);
+
+  free(info->RPO_index);
+  free(info->inverse_RPO_index);
+
   destroy_BBTree(&info->Dom_tree);
   destroy_BBTree(&info->PDom_tree);
+
+  *info = (CFGInfo){};
 }
 
-static void destroy_func(SSAFunc *func)
+static void destroy_func(SSAModule *module, SSAFuncName fn)
 {
+  SSAFunc *func = get_func(module, fn);
   if (!func)
     return;
 
@@ -162,7 +177,7 @@ static void destroy_func(SSAFunc *func)
   free(func->arg_types);
   free(func->arg_SSA_names);
 
-  destroy_CFGInfo(&func->CFG_info);
+  destroy_CFGInfo(module, fn);
 
   *func = (SSAFunc){};
 }
@@ -215,7 +230,7 @@ void destroy_module(SSAModule *module)
     return;
 
   for (i = 0; i < module->functions_count; ++i)
-    destroy_func(&module->functions[i]);
+    destroy_func(module, i);
 
   free(module->functions);
   *module = (SSAModule){};
@@ -304,15 +319,7 @@ SSAFuncName new_func(SSAModule *module, const char *name, SSAValueType return_ty
   func->exit_block = SSA_INVALID_BB;
   func->parent_module = module;
 
-  func->CFG_info = (CFGInfo){
-      .Dom_tree = {.ready = 0,
-                   NULL,
-                   NULL,
-                   NULL},
-      .PDom_tree = {.ready = 0,
-                    NULL,
-                    NULL,
-                    NULL}};
+  func->CFG_info = (CFGInfo){};
 
   module->functions_count += 1;
   return module->functions_count - 1;
@@ -325,6 +332,8 @@ SSABasicBlockName new_BB(SSAModule *module, SSAFuncName func)
 
   if (!function)
     return SSA_INVALID_BB;
+
+  destroy_CFGInfo(module, func);
 
   if (ensure_array_capacity((void **)&function->basic_blocks, &function->basic_blocks_cap,
                             sizeof(SSABasicBlock), function->basic_blocks_count + 1) < 0)
@@ -345,6 +354,7 @@ int set_entry_BB(SSAModule *module, SSAFuncName func, SSABasicBlockName BB)
   SSAFunc *function = get_func(module, func);
   if (!function || !is_valid_bb(module, func, BB))
     return 0;
+  destroy_CFGInfo(module, func);
   function->entry_block = BB;
   return 1;
 }
@@ -353,6 +363,7 @@ int set_exit_BB(SSAModule *module, SSAFuncName func, SSABasicBlockName BB)
   SSAFunc *function = get_func(module, func);
   if (!function || !is_valid_bb(module, func, BB))
     return 0;
+  destroy_CFGInfo(module, func);
   function->exit_block = BB;
   return 1;
 }
@@ -377,6 +388,8 @@ static SSAInstrName add_instr(SSAModule *module, SSAFuncName func, SSABasicBlock
     block->first_instr = instr_name;
 
   block->last_instr = instr_name;
+
+  destroy_CFGInfo(module, func);
 
   return instr_name;
 }
@@ -787,6 +800,29 @@ void SSAInstrList_destroy(SSAInstrList *list)
   SSAInstrList_destroy(next);
 }
 
+int SSABasicBlockList_append(SSABasicBlockList **list, SSABasicBlockName bb)
+{
+  if (!list)
+    return 0;
+
+  SSABasicBlockList *l = malloc(sizeof(SSABasicBlockList));
+  if (!l)
+    return 0;
+  l->next = *list;
+  l->BB = bb;
+  *list = l;
+  return 1;
+}
+
+void SSABasicBlockList_destroy(SSABasicBlockList *list)
+{
+  if (!list)
+    return;
+  SSABasicBlockList *next = list->next;
+  free(list);
+  SSABasicBlockList_destroy(next);
+}
+
 int insert_instr_before(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
                         SSAInstrName place, SSAInstr instr)
 {
@@ -798,6 +834,8 @@ int insert_instr_before(SSAModule *module, SSAFuncName func, SSABasicBlockName B
 
   if (!bb->first_instr || place == SSA_INVALID_INSTR)
     return 0;
+
+  destroy_CFGInfo(module, func);
 
   if (bb->first_instr == place)
   {
@@ -853,6 +891,8 @@ int insert_instr_after(SSAModule *module, SSAFuncName func, SSABasicBlockName BB
   if (!bb->first_instr || place == SSA_INVALID_INSTR)
     return 0;
 
+  destroy_CFGInfo(module, func);
+
   if (bb->last_instr == place)
   {
     if (instr.kind == SSA_INSTR_VAL)
@@ -880,6 +920,8 @@ int replace_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
   SSAFunc *function = get_func(module, func);
   if (!function || !is_valid_bb(module, func, BB))
     return 0;
+
+  destroy_CFGInfo(module, func);
 
   SSABasicBlock *bb = &function->basic_blocks[BB];
   for (SSAInstrName i = bb->first_instr; i; i = i->next)
@@ -921,6 +963,8 @@ int remove_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAI
     return 0;
 
   SSABasicBlock *bb = &function->basic_blocks[BB];
+
+  destroy_CFGInfo(module, func);
 
   for (SSAInstrName i = bb->first_instr; i; i = i->next)
     if (i == instr)
@@ -1126,20 +1170,222 @@ int validate_func(SSAModule *module, SSAFuncName func)
   return 1;
 }
 
+static int postorder_rec(SSAModule *module, SSAFuncName func, int *visited,
+                         SSABasicBlockName bb, SSABasicBlockList **postorder)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function || !is_valid_bb(module, func, bb) || visited[bb])
+    return 0;
+
+  visited[bb] = 1;
+
+  SSAInstrName term = get_BB_terminator(module, func, bb);
+  if (term)
+    switch (term->term.type)
+    {
+    case SSA_TERM_GOTO:
+      postorder_rec(module, func, visited, term->term.true_dst, postorder);
+      break;
+    case SSA_TERM_COND_GOTO:
+      postorder_rec(module, func, visited, term->term.true_dst, postorder);
+      postorder_rec(module, func, visited, term->term.false_dst, postorder);
+      break;
+    default:
+      break;
+    }
+  SSABasicBlockList_append(postorder, bb);
+  return 1;
+}
+
+static int build_RPO(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return 0;
+
+  SSABasicBlockList *postorder = NULL;
+  int *visited = calloc(function->basic_blocks_count, sizeof(int));
+  if (!postorder_rec(module, func, visited, function->entry_block, &postorder))
+    return free(visited), 0;
+  free(visited);
+
+  int *RPO = malloc(function->basic_blocks_count * sizeof(int));
+  SSABasicBlockName *inverse_RPO = malloc(function->basic_blocks_count * sizeof(SSABasicBlockName));
+  for (int i = 0; i < function->basic_blocks_count; ++i)
+  {
+    RPO[i] = -1;
+    inverse_RPO[i] = SSA_INVALID_BB;
+  }
+  int i = 0;
+  for (SSABasicBlockList *bb = postorder; bb && i < function->basic_blocks_count; bb = bb->next, ++i)
+  {
+    inverse_RPO[i] = bb->BB;
+    RPO[bb->BB] = i;
+  }
+  SSABasicBlockList_destroy(postorder);
+
+  function->CFG_info.inverse_RPO_index = inverse_RPO;
+  function->CFG_info.RPO_index = RPO;
+  function->CFG_info.valid_RPO = 1;
+  return 1;
+}
+
+int require_RPO(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return 0;
+
+  if (function->CFG_info.valid_RPO)
+    return 1;
+
+  return build_RPO(module, func);
+}
+
+static int build_predcessors_list(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return 0;
+  SSABasicBlockList **preds = calloc(function->basic_blocks_count, sizeof(*preds));
+  for (SSABasicBlockName BB = 0; BB < function->basic_blocks_count; ++BB)
+  {
+    SSAInstrName term = get_BB_terminator(module, func, BB);
+    if (!term)
+      continue;
+    switch (term->term.type)
+    {
+    case SSA_TERM_GOTO:
+      SSABasicBlockList_append(&preds[term->term.true_dst], BB);
+      break;
+    case SSA_TERM_COND_GOTO:
+      SSABasicBlockList_append(&preds[term->term.true_dst], BB);
+      if (term->term.false_dst != term->term.true_dst)
+        SSABasicBlockList_append(&preds[term->term.false_dst], BB);
+      break;
+    default:
+      break;
+    }
+  }
+  function->CFG_info.preds = preds;
+  function->CFG_info.valid_preds = 1;
+  return 1;
+}
+int require_predecessors_list(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return 0;
+
+  if (function->CFG_info.valid_preds)
+    return 1;
+  return build_predcessors_list(module, func);
+}
+
+static SSABasicBlockName idom_intersect(SSAModule *module, SSAFuncName func,
+                                        SSABasicBlockName *idom,
+                                        SSABasicBlockName b1, SSABasicBlockName b2)
+{
+  SSAFunc *function = get_func(module, func);
+
+  if (!function || !require_RPO(module, func))
+    return SSA_INVALID_BB;
+
+  while (b1 != b2)
+  {
+    while (function->CFG_info.RPO_index[b1] > function->CFG_info.RPO_index[b2])
+      b1 = idom[b1];
+    while (function->CFG_info.RPO_index[b1] < function->CFG_info.RPO_index[b2])
+      b2 = idom[b2];
+  }
+  return b1;
+}
+
 static int build_Dom_tree(SSAModule *module, SSAFuncName func)
 {
-  return 0;
+  SSAFunc *function = get_func(module, func);
+  if (!function || !require_predecessors_list(module, func) || !require_RPO(module, func))
+    return 0;
+
+  SSABasicBlockName *idom = malloc(sizeof(SSABasicBlockName) * function->basic_blocks_count);
+  for (SSABasicBlockName *i = idom; i < idom + function->basic_blocks_count; ++i)
+    *i = SSA_INVALID_BB;
+
+  idom[function->entry_block] = function->entry_block;
+
+  SSABasicBlockList *processed_preds = NULL;
+  SSABasicBlockName new_idom = SSA_INVALID_BB;
+  int changed = 1;
+  while (changed)
+  {
+    changed = 0;
+    for (SSABasicBlockName *BB = function->CFG_info.inverse_RPO_index;
+         BB < function->CFG_info.inverse_RPO_index + function->basic_blocks_count;
+         ++BB)
+    {
+      if (*BB == SSA_INVALID_BB || *BB == function->entry_block)
+        continue;
+      for (SSABasicBlockList *pred = function->CFG_info.preds[*BB]; pred; pred = pred->next)
+        if (idom[pred->BB] != SSA_INVALID_BB)
+          SSABasicBlockList_append(&processed_preds, pred->BB);
+
+      if (processed_preds)
+      {
+        new_idom = processed_preds->BB;
+
+        for (SSABasicBlockList *p = processed_preds->next; p; p = p->next)
+          new_idom = idom_intersect(module, func, idom, new_idom, p->BB);
+        if (idom[*BB] != new_idom)
+        {
+          changed = 1;
+          idom[*BB] = new_idom;
+        }
+      }
+
+      SSABasicBlockList_destroy(processed_preds);
+      processed_preds = NULL;
+    }
+  }
+  SSABasicBlockName *child_arr = malloc(function->basic_blocks_count * sizeof(SSABasicBlockName));
+  SSABasicBlockName *sibling_arr = malloc(function->basic_blocks_count * sizeof(SSABasicBlockName));
+  for (SSABasicBlockName bb = 0; bb < function->basic_blocks_count; ++bb)
+    child_arr[bb] = sibling_arr[bb] = SSA_INVALID_BB;
+
+  for (SSABasicBlockName bb = 0; bb < function->basic_blocks_count; ++bb)
+  {
+    if (bb == function->entry_block || idom[bb] == SSA_INVALID_BB)
+      continue;
+    SSABasicBlockName *dst = &child_arr[idom[bb]];
+    while (*dst != SSA_INVALID_BB)
+      dst = &sibling_arr[*dst];
+    *dst = bb;
+  }
+
+  function->CFG_info.Dom_tree.parent_arr = idom;
+  function->CFG_info.Dom_tree.child_arr = child_arr;
+  function->CFG_info.Dom_tree.sibling_arr = sibling_arr;
+
+  function->CFG_info.valid_DOM = 1;
+
+  return 1;
 }
 static int build_PDom_tree(SSAModule *module, SSAFuncName func)
 {
   return 0;
 }
 
-static int require_Dom_tree(SSAModule *module, SSAFuncName func)
+int require_Dom_tree(SSAModule *module, SSAFuncName func)
 {
-  return 0;
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return 0;
+  if (function->CFG_info.valid_DOM)
+    return 1;
+
+  return build_Dom_tree(module, func);
 }
-static int require_IDom_tree(SSAModule *module, SSAFuncName func)
+
+int require_PDom_tree(SSAModule *module, SSAFuncName func)
 {
   return 0;
 }
@@ -1149,6 +1395,11 @@ SSABasicBlockName CFG_get_cond_joint(SSAModule *module, SSAFuncName func, SSAIns
   SSAFunc *function = get_func(module, func);
   if (!function || cond_goto == SSA_INVALID_INSTR)
     return SSA_INVALID_BB;
+
+  if (!require_PDom_tree(module, func))
+    return SSA_INVALID_BB;
+
+  /*INCOMPLETE*/
 
   return SSA_INVALID_BB;
 }

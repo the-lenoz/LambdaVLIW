@@ -144,9 +144,21 @@ typedef struct
 
 } SSABasicBlock;
 
+typedef struct _i_list
+{
+  SSAInstrName instr;
+  struct _i_list *next;
+} SSAInstrList;
+
+typedef struct _bb_list
+{
+  SSABasicBlockName BB;
+  struct _bb_list *next;
+} SSABasicBlockList;
+
+
 typedef struct
 {
-  int ready;
   SSABasicBlockName *parent_arr;
   SSABasicBlockName *child_arr;
   SSABasicBlockName *sibling_arr;
@@ -154,6 +166,15 @@ typedef struct
 
 typedef struct
 {
+  int valid_preds;
+  int valid_RPO;
+  int valid_DOM;
+  int valid_PDOM;
+
+  SSABasicBlockList **preds;
+  int *RPO_index;
+  SSABasicBlockName *inverse_RPO_index;
+
   BBTree Dom_tree;
   BBTree PDom_tree;
 } CFGInfo;
@@ -189,13 +210,6 @@ struct _SSAModule
   unsigned int functions_cap;
   SSAFunc *functions;
 };
-
-typedef struct _i_list
-{
-  SSAInstrName instr;
-  struct _i_list *next;
-} SSAInstrList;
-
 SSAModule *new_module();
 void destroy_module(SSAModule *module);
 SSAFuncName new_func(SSAModule *module, const char *name,
@@ -234,6 +248,9 @@ int ArgList_append(ArgList **list, SSAValName arg_name);
 int SSAInstrList_append(SSAInstrList **list, SSAInstrName instr);
 void SSAInstrList_destroy(SSAInstrList *list);
 
+int SSABasicBlockList_append(SSABasicBlockList **list, SSABasicBlockName bb);
+void SSABasicBlockList_destroy(SSABasicBlockList *list);
+
 SSAInstrList *find_all_val_usages(SSAModule *module, SSAFuncName func, SSAValName val);
 int rename_all_val_uses(SSAModule *module, SSAFuncName func, SSAValName old, SSAValName new);
 
@@ -257,5 +274,10 @@ int remove_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAI
 int is_valid_bb(SSAModule *module, SSAFuncName func, SSABasicBlockName bb);
 int is_valid_value(SSAModule *module, SSAFuncName func, SSAValName val);
 int validate_func(SSAModule *module, SSAFuncName func);
+
+int require_RPO(SSAModule *module, SSAFuncName func);
+int require_predecessors_list(SSAModule *module, SSAFuncName func);
+int require_Dom_tree(SSAModule *module, SSAFuncName func);
+int require_PDom_tree(SSAModule *module, SSAFuncName func);
 
 #endif
