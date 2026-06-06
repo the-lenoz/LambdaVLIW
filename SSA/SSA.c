@@ -144,8 +144,16 @@ static void destroy_CFGInfo(SSAModule *module, SSAFuncName func)
       SSABasicBlockList_destroy(info->preds[i]);
   free(info->preds);
 
+  if (info->succs)
+    for (int i = 0; i < function->basic_blocks_count; ++i)
+      SSABasicBlockList_destroy(info->succs[i]);
+  free(info->succs);
+
   free(info->RPO_index);
   free(info->inverse_RPO_index);
+
+  free(info->entry_reachable);
+  free(info->exit_reachable);
 
   destroy_BBTree(&info->Dom_tree);
   destroy_BBTree(&info->PDom_tree);
@@ -486,7 +494,7 @@ SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
       return SSA_INVALID_VAL;
   }
   if (i != calee_func->args_count)
-    return SSA_INVALID_FUNC;
+    return SSA_INVALID_VAL;
 
   value = (SSAValue){};
   value.kind = SSA_VALUE_CALL;
@@ -1170,8 +1178,98 @@ int validate_func(SSAModule *module, SSAFuncName func)
   return 1;
 }
 
+static int BB_dfs(SSAModule *module, SSAFuncName func, SSABasicBlockName start,
+                  int *visited, SSABasicBlockList **next_arr)
+{
+  if (!visited || !next_arr || !is_valid_bb(module, func, start))
+    return 0;
+  if (visited[start])
+    return 1;
+  visited[start] = 1;
+  for (SSABasicBlockList *l = next_arr[start]; l; l = l->next)
+    BB_dfs(module, func, l->BB, visited, next_arr);
+  return 1;
+}
+
+static int build_entry_reachable(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function || !require_successors_list(module, func))
+    return 0;
+  function->CFG_info.entry_reachable = calloc(function->basic_blocks_count, sizeof(int));
+  if (!function->CFG_info.entry_reachable)
+    return 0;
+  int result = BB_dfs(module, func, function->entry_block,
+                      function->CFG_info.entry_reachable, function->CFG_info.succs);
+  if (result)
+    function->CFG_info.valid_entry_reachable = 1;
+  return result;
+}
+
+int require_entry_reachable(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return 0;
+
+  if (function->CFG_info.valid_entry_reachable)
+    return 1;
+  return build_entry_reachable(module, func);
+}
+
+static int build_exit_reachable(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function || !require_predecessors_list(module, func))
+    return 0;
+  function->CFG_info.exit_reachable = calloc(function->basic_blocks_count, sizeof(int));
+  if (!function->CFG_info.exit_reachable)
+    return 0;
+  int result = BB_dfs(module, func, function->exit_block,
+                      function->CFG_info.exit_reachable, function->CFG_info.preds);
+  if (result)
+    function->CFG_info.valid_exit_reachable = 1;
+  return result;
+}
+int require_exit_reachable(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return 0;
+
+  if (function->CFG_info.valid_exit_reachable)
+    return 1;
+  return build_exit_reachable(module, func);
+}
+
+static int is_infinite_loop_header(SSAModule *module, SSAFuncName func, SSABasicBlockName header)
+{
+  SSAFunc *function = get_func(module, func);
+
+  if (!function || !require_exit_reachable(module, func) || !is_valid_bb(module, func, header))
+    return 0;
+
+  return function->CFG_info.exit_reachable[header];
+}
+
+static SSABasicBlockList *find_infinite_loops(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return NULL;
+
+  SSABasicBlockList *all_loops = find_natural_loops(module, func);
+  SSABasicBlockList *infinite_loops = NULL;
+
+  for (SSABasicBlockList *loop = all_loops; loop; loop = loop->next)
+    if (is_infinite_loop_header(module, func, loop->BB))
+      SSABasicBlockList_append(&infinite_loops, loop->BB);
+  SSABasicBlockList_destroy(all_loops);
+  return infinite_loops;
+}
+
 static int postorder_rec(SSAModule *module, SSAFuncName func, int *visited,
-                         SSABasicBlockName bb, SSABasicBlockList **postorder)
+                         SSABasicBlockName bb, SSABasicBlockList **postorder, SSABasicBlockList **next)
 {
   SSAFunc *function = get_func(module, func);
   if (!function || !is_valid_bb(module, func, bb) || visited[bb])
@@ -1179,20 +1277,9 @@ static int postorder_rec(SSAModule *module, SSAFuncName func, int *visited,
 
   visited[bb] = 1;
 
-  SSAInstrName term = get_BB_terminator(module, func, bb);
-  if (term)
-    switch (term->term.type)
-    {
-    case SSA_TERM_GOTO:
-      postorder_rec(module, func, visited, term->term.true_dst, postorder);
-      break;
-    case SSA_TERM_COND_GOTO:
-      postorder_rec(module, func, visited, term->term.true_dst, postorder);
-      postorder_rec(module, func, visited, term->term.false_dst, postorder);
-      break;
-    default:
-      break;
-    }
+  for (SSABasicBlockList *successor = next[bb]; successor; successor = successor->next)
+    postorder_rec(module, func, visited, successor->BB, postorder, next);
+
   SSABasicBlockList_append(postorder, bb);
   return 1;
 }
@@ -1200,12 +1287,12 @@ static int postorder_rec(SSAModule *module, SSAFuncName func, int *visited,
 static int build_RPO(SSAModule *module, SSAFuncName func)
 {
   SSAFunc *function = get_func(module, func);
-  if (!function)
+  if (!function || !require_successors_list(module, func))
     return 0;
 
   SSABasicBlockList *postorder = NULL;
   int *visited = calloc(function->basic_blocks_count, sizeof(int));
-  if (!postorder_rec(module, func, visited, function->entry_block, &postorder))
+  if (!postorder_rec(module, func, visited, function->entry_block, &postorder, function->CFG_info.succs))
     return free(visited), 0;
   free(visited);
 
@@ -1240,6 +1327,64 @@ int require_RPO(SSAModule *module, SSAFuncName func)
     return 1;
 
   return build_RPO(module, func);
+}
+static int build_back_RPO(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function || !require_predecessors_list(module, func))
+    return 0;
+
+  SSABasicBlockList *postorder = NULL;
+  int *visited = calloc(function->basic_blocks_count, sizeof(int));
+  SSABasicBlockList **preds_plus_infinite = calloc(function->basic_blocks_count, sizeof(SSABasicBlockList));
+  for (SSABasicBlockName bb = 0; bb < function->basic_blocks_count; ++bb)
+    for (SSABasicBlockList *pred = function->CFG_info.preds[bb]; pred; pred = pred->next)
+      SSABasicBlockList_append(preds_plus_infinite + bb, pred->BB);
+
+  SSABasicBlockList *inf_loops = find_infinite_loops(module, func);
+  for (SSABasicBlockList *loop = inf_loops; loop; loop = loop->next)
+    SSABasicBlockList_append(preds_plus_infinite + function->exit_block, loop->BB);
+  SSABasicBlockList_destroy(inf_loops);
+  
+  if (!postorder_rec(module, func, visited, function->exit_block, &postorder, preds_plus_infinite))
+    return free(visited), 0;
+  free(visited);
+
+  for (SSABasicBlockName bb = 0; bb < function->basic_blocks_count; ++bb)
+    SSABasicBlockList_destroy(preds_plus_infinite[bb]);
+  free(preds_plus_infinite);
+
+  int *RPO = malloc(function->basic_blocks_count * sizeof(int));
+  SSABasicBlockName *inverse_RPO = malloc(function->basic_blocks_count * sizeof(SSABasicBlockName));
+  for (int i = 0; i < function->basic_blocks_count; ++i)
+  {
+    RPO[i] = -1;
+    inverse_RPO[i] = SSA_INVALID_BB;
+  }
+  int i = 0;
+  for (SSABasicBlockList *bb = postorder; bb && i < function->basic_blocks_count; bb = bb->next, ++i)
+  {
+    inverse_RPO[i] = bb->BB;
+    RPO[bb->BB] = i;
+  }
+  SSABasicBlockList_destroy(postorder);
+
+  function->CFG_info.inverse_back_RPO_index = inverse_RPO;
+  function->CFG_info.back_RPO_index = RPO;
+  function->CFG_info.valid_RPO = 1;
+  return 1;
+}
+
+int require_back_RPO(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return 0;
+
+  if (function->CFG_info.valid_back_RPO)
+    return 1;
+
+  return build_back_RPO(module, func);
 }
 
 static int build_predcessors_list(SSAModule *module, SSAFuncName func)
@@ -1282,20 +1427,58 @@ int require_predecessors_list(SSAModule *module, SSAFuncName func)
   return build_predcessors_list(module, func);
 }
 
-static SSABasicBlockName idom_intersect(SSAModule *module, SSAFuncName func,
-                                        SSABasicBlockName *idom,
-                                        SSABasicBlockName b1, SSABasicBlockName b2)
+static int build_successors_list(SSAModule *module, SSAFuncName func)
 {
   SSAFunc *function = get_func(module, func);
+  if (!function)
+    return 0;
+  SSABasicBlockList **succs = calloc(function->basic_blocks_count, sizeof(*succs));
+  for (SSABasicBlockName BB = 0; BB < function->basic_blocks_count; ++BB)
+  {
+    SSAInstrName term = get_BB_terminator(module, func, BB);
+    if (!term)
+      continue;
+    switch (term->term.type)
+    {
+    case SSA_TERM_GOTO:
+      SSABasicBlockList_append(&succs[BB], term->term.true_dst);
+      break;
+    case SSA_TERM_COND_GOTO:
+      SSABasicBlockList_append(&succs[BB], term->term.true_dst);
+      if (term->term.false_dst != term->term.true_dst)
+        SSABasicBlockList_append(&succs[BB], term->term.false_dst);
+      break;
+    default:
+      break;
+    }
+  }
+  function->CFG_info.succs = succs;
+  function->CFG_info.valid_succs = 1;
+  return 1;
+}
+int require_successors_list(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return 0;
 
-  if (!function || !require_RPO(module, func))
+  if (function->CFG_info.valid_succs)
+    return 1;
+  return build_successors_list(module, func);
+}
+
+static SSABasicBlockName idom_intersect(SSAModule *module, SSAFuncName func,
+                                        SSABasicBlockName *idom, int *RPO_idx_arr,
+                                        SSABasicBlockName b1, SSABasicBlockName b2)
+{
+  if (!is_valid_bb(module, func, b1) || !is_valid_bb(module, func, b2))
     return SSA_INVALID_BB;
 
   while (b1 != b2)
   {
-    while (function->CFG_info.RPO_index[b1] > function->CFG_info.RPO_index[b2])
+    while (RPO_idx_arr[b1] > RPO_idx_arr[b2])
       b1 = idom[b1];
-    while (function->CFG_info.RPO_index[b1] < function->CFG_info.RPO_index[b2])
+    while (RPO_idx_arr[b1] < RPO_idx_arr[b2])
       b2 = idom[b2];
   }
   return b1;
@@ -1334,7 +1517,7 @@ static int build_Dom_tree(SSAModule *module, SSAFuncName func)
         new_idom = processed_preds->BB;
 
         for (SSABasicBlockList *p = processed_preds->next; p; p = p->next)
-          new_idom = idom_intersect(module, func, idom, new_idom, p->BB);
+          new_idom = idom_intersect(module, func, idom, function->CFG_info.RPO_index, new_idom, p->BB);
         if (idom[*BB] != new_idom)
         {
           changed = 1;
@@ -1369,10 +1552,6 @@ static int build_Dom_tree(SSAModule *module, SSAFuncName func)
 
   return 1;
 }
-static int build_PDom_tree(SSAModule *module, SSAFuncName func)
-{
-  return 0;
-}
 
 int require_Dom_tree(SSAModule *module, SSAFuncName func)
 {
@@ -1385,9 +1564,121 @@ int require_Dom_tree(SSAModule *module, SSAFuncName func)
   return build_Dom_tree(module, func);
 }
 
+static int build_PDom_tree(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function || !require_successors_list(module, func) || !require_back_RPO(module, func))
+    return 0;
+
+  SSABasicBlockName *iPdom = malloc(sizeof(SSABasicBlockName) * function->basic_blocks_count);
+  for (SSABasicBlockName *i = iPdom; i < iPdom + function->basic_blocks_count; ++i)
+    *i = SSA_INVALID_BB;
+
+  iPdom[function->exit_block] = function->exit_block;
+
+  SSABasicBlockList *processed_succs = NULL;
+  SSABasicBlockName new_idom = SSA_INVALID_BB;
+  int changed = 1;
+  while (changed)
+  {
+    changed = 0;
+    for (SSABasicBlockName *BB = function->CFG_info.inverse_RPO_index;
+         BB < function->CFG_info.inverse_RPO_index + function->basic_blocks_count;
+         ++BB)
+    {
+      if (*BB == SSA_INVALID_BB || *BB == function->exit_block)
+        continue;
+      for (SSABasicBlockList *succ = function->CFG_info.succs[*BB]; succ; succ = succ->next)
+        if (iPdom[succ->BB] != SSA_INVALID_BB)
+          SSABasicBlockList_append(&processed_succs, succ->BB);
+
+      if (processed_succs)
+      {
+        new_idom = processed_succs->BB;
+
+        for (SSABasicBlockList *p = processed_succs->next; p; p = p->next)
+          new_idom = idom_intersect(module, func, iPdom, function->CFG_info.back_RPO_index, new_idom, p->BB);
+        if (iPdom[*BB] != new_idom)
+        {
+          changed = 1;
+          iPdom[*BB] = new_idom;
+        }
+      }
+
+      SSABasicBlockList_destroy(processed_succs);
+      processed_succs = NULL;
+    }
+  }
+  SSABasicBlockName *child_arr = malloc(function->basic_blocks_count * sizeof(SSABasicBlockName));
+  SSABasicBlockName *sibling_arr = malloc(function->basic_blocks_count * sizeof(SSABasicBlockName));
+  for (SSABasicBlockName bb = 0; bb < function->basic_blocks_count; ++bb)
+    child_arr[bb] = sibling_arr[bb] = SSA_INVALID_BB;
+
+  for (SSABasicBlockName bb = 0; bb < function->basic_blocks_count; ++bb)
+  {
+    if (bb == function->exit_block || iPdom[bb] == SSA_INVALID_BB)
+      continue;
+    SSABasicBlockName *dst = &child_arr[iPdom[bb]];
+    while (*dst != SSA_INVALID_BB)
+      dst = &sibling_arr[*dst];
+    *dst = bb;
+  }
+
+  function->CFG_info.PDom_tree.parent_arr = iPdom;
+  function->CFG_info.PDom_tree.child_arr = child_arr;
+  function->CFG_info.PDom_tree.sibling_arr = sibling_arr;
+
+  function->CFG_info.valid_PDOM = 1;
+
+  return 1;
+}
+
 int require_PDom_tree(SSAModule *module, SSAFuncName func)
 {
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return 0;
+  if (function->CFG_info.valid_PDOM)
+    return 1;
+
+  return build_PDom_tree(module, func);
+}
+
+int is_dominator_of(SSAModule *module, SSAFuncName func, SSABasicBlockName dom, SSABasicBlockName BB)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function || !require_Dom_tree(module, func) ||
+      !is_valid_bb(module, func, dom) || !is_valid_bb(module, func, BB))
+    return 0;
+
+  if (dom == function->entry_block)
+    return 1;
+
+  while (BB != function->entry_block)
+  {
+    if (dom == BB)
+      return 1;
+    BB = function->CFG_info.Dom_tree.parent_arr[BB];
+  }
   return 0;
+}
+
+SSABasicBlockList *find_natural_loops(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function || !require_Dom_tree(module, func) || !require_successors_list(module, func))
+    return NULL;
+
+  SSABasicBlockList *headers = NULL;
+
+  for (SSABasicBlockName bb = 0; bb < function->basic_blocks_count; ++bb)
+  {
+    for (SSABasicBlockList *successor = function->CFG_info.succs[bb]; successor; successor = successor->next)
+      if (is_dominator_of(module, func, successor->BB, bb))
+        SSABasicBlockList_append(&headers, successor->BB);
+  }
+
+  return headers;
 }
 
 SSABasicBlockName CFG_get_cond_joint(SSAModule *module, SSAFuncName func, SSAInstrName cond_goto)

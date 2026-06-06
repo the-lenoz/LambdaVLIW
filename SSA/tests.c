@@ -650,14 +650,20 @@ static int test_dom_tree_and_dump(void)
 
   fp = tmpfile();
   TEST_ASSERT(fp != NULL);
-  TEST_ASSERT(SSA_dump_func_dom_tree_graphviz(module, fn, fp) == 0);
-  TEST_ASSERT(stream_contains(fp, "digraph SSA_DOM"));
-  TEST_ASSERT(stream_contains(fp, "DOM tree: dom_main"));
+  TEST_ASSERT(SSA_dump_func_cfg_info_graphviz(module, fn, fp) == 0);
+  TEST_ASSERT(stream_contains(fp, "digraph SSA_CFG_INFO"));
+  TEST_ASSERT(stream_contains(fp, "function: dom_main"));
+  TEST_ASSERT(stream_contains(fp, "DOM tree"));
+  TEST_ASSERT(stream_contains(fp, "PDOM tree"));
+  TEST_ASSERT(stream_contains(fp, "predecessors"));
+  TEST_ASSERT(stream_contains(fp, "successors"));
   TEST_ASSERT(stream_contains(fp, "f0_dom_bb0 -> f0_dom_bb1"));
   TEST_ASSERT(stream_contains(fp, "f0_dom_bb0 -> f0_dom_bb2"));
   TEST_ASSERT(stream_contains(fp, "f0_dom_bb0 -> f0_dom_bb3"));
   TEST_ASSERT(stream_contains(fp, "f0_dom_bb3 -> f0_dom_bb4"));
   TEST_ASSERT(stream_contains(fp, "f0_dom_bb3 -> f0_dom_bb5"));
+  TEST_ASSERT(stream_contains(fp, "f0_succs_bb0 -> f0_succs_bb1"));
+  TEST_ASSERT(stream_contains(fp, "f0_preds_bb0 -> f0_preds_bb1"));
   fclose(fp);
 
   destroy_module(module);

@@ -503,96 +503,191 @@ int SSA_dump_func_graphviz(const SSAModule *module, SSAFuncName func, FILE *out_
   return fputs("}\n", out_fp) == EOF ? -1 : 0;
 }
 
-static int gv_emit_dom_block_node(FILE *out_fp, const SSAFunc *func, SSAFuncName fn, SSABasicBlockName bb)
+static int gv_cfg_block_colors(const SSAFunc *func, SSABasicBlockName bb, const char **fill, const char **color)
 {
-  const char *fill = "#f8fafb";
-  const char *color = "#455a64";
-
-  if (!out_fp || !func || bb >= func->basic_blocks_count)
+  if (!func || !fill || !color || bb >= func->basic_blocks_count)
     return -1;
 
-  if (bb == func->entry_block)
+  *fill = "#f8fafb";
+  *color = "#455a64";
+
+  if (func->CFG_info.valid_entry_reachable && !func->CFG_info.entry_reachable[bb])
   {
-    fill = "#edf7ee";
-    color = "#2e7d32";
+    *fill = "#ffebee";
+    *color = "#c62828";
+  }
+  else if (func->CFG_info.valid_exit_reachable && !func->CFG_info.exit_reachable[bb])
+  {
+    *fill = "#e3f2fd";
+    *color = "#1565c0";
+  }
+  else if (bb == func->entry_block)
+  {
+    *fill = "#edf7ee";
+    *color = "#2e7d32";
   }
   else if (bb == func->exit_block)
   {
-    fill = "#fff8ef";
-    color = "#ef6c00";
+    *fill = "#fff8ef";
+    *color = "#ef6c00";
   }
 
-  if (fprintf(out_fp, "    f%u_dom_bb%u [label=\"bb%u", fn, bb, bb) < 0)
+  return 0;
+}
+
+static int gv_emit_cfg_block_node(FILE *out_fp, const SSAFunc *func, SSAFuncName fn, const char *kind,
+                                  SSABasicBlockName bb)
+{
+  const char *fill;
+  const char *color;
+
+  if (gv_cfg_block_colors(func, bb, &fill, &color) < 0)
+    return -1;
+
+  if (fprintf(out_fp, "      f%u_%s_bb%u [label=\"bb%u", fn, kind, bb, bb) < 0)
     return -1;
   if (bb == func->entry_block && fputs(" [entry]", out_fp) == EOF)
     return -1;
   if (bb == func->exit_block && fputs(" [exit]", out_fp) == EOF)
     return -1;
-  if (fprintf(out_fp, "\", style=filled, fillcolor=\"%s\", color=\"%s\"];\n", fill, color) < 0)
+  if (func->CFG_info.valid_entry_reachable && !func->CFG_info.entry_reachable[bb] && fputs(" [unreachable]", out_fp) == EOF)
+    return -1;
+  if (func->CFG_info.valid_exit_reachable && !func->CFG_info.exit_reachable[bb] && fputs(" [no-exit]", out_fp) == EOF)
+    return -1;
+  if (fprintf(out_fp, "\", style=filled, fillcolor=\"%s\", color=\"%s\", penwidth=1.4];\n", fill, color) < 0)
     return -1;
 
   return 0;
 }
 
-static int gv_emit_dom_unavailable_node(FILE *out_fp, SSAFuncName fn)
+static int gv_emit_cfg_unavailable_node(FILE *out_fp, SSAFuncName fn, const char *kind)
 {
   return fprintf(out_fp,
-                 "    f%u_dom_unavailable [label=\"<no CFG>\", style=filled, fillcolor=\"#eeeeee\", color=\"#9e9e9e\"];\n",
-                 fn) < 0
+                 "      f%u_%s_unavailable [label=\"<no CFG>\", style=filled, fillcolor=\"#eeeeee\", color=\"#9e9e9e\"];\n",
+                 fn, kind) < 0
              ? -1
              : 0;
 }
 
-static int gv_emit_dom_function_cluster(FILE *out_fp, SSAModule *module, SSAFuncName fn)
+static int gv_begin_cfg_info_section(FILE *out_fp, const SSAFunc *func, SSAFuncName fn, const char *kind,
+                                     const char *title)
+{
+  (void)func;
+
+  if (fprintf(out_fp, "    subgraph cluster_f%u_%s {\n", fn, kind) < 0 ||
+      fputs("      color=\"#5d4037\"; pencolor=\"#5d4037\"; style=rounded; bgcolor=\"#fffaf4\";\n", out_fp) == EOF ||
+      fputs("      margin=14; labelloc=t; labeljust=l;\n", out_fp) == EOF ||
+      fprintf(out_fp, "      label=\"%s\";\n", title) < 0)
+    return -1;
+
+  return 0;
+}
+
+static int gv_emit_cfg_tree_section(FILE *out_fp, SSAModule *module, SSAFuncName fn, const char *kind,
+                                    const char *title, int (*require_tree)(SSAModule *, SSAFuncName),
+                                    BBTree *tree)
+{
+  SSAFunc *func = get_func(module, fn);
+
+  if (!func || gv_begin_cfg_info_section(out_fp, func, fn, kind, title) < 0)
+    return -1;
+
+  if (func->basic_blocks_count == 0 || !require_tree(module, fn))
+  {
+    if (gv_emit_cfg_unavailable_node(out_fp, fn, kind) < 0)
+      return -1;
+    return fputs("    }\n", out_fp) == EOF ? -1 : 0;
+  }
+
+  for (SSABasicBlockName bb = 0; bb < func->basic_blocks_count; ++bb)
+    if (gv_emit_cfg_block_node(out_fp, func, fn, kind, bb) < 0)
+      return -1;
+
+  for (SSABasicBlockName parent = 0; parent < func->basic_blocks_count; ++parent)
+  {
+    SSABasicBlockName child = tree->child_arr[parent];
+    while (child != SSA_INVALID_BB)
+    {
+      if (fprintf(out_fp, "      f%u_%s_bb%u -> f%u_%s_bb%u [color=\"#6d4c41\", penwidth=1.4];\n",
+                  fn, kind, parent, fn, kind, child) < 0)
+        return -1;
+      child = tree->sibling_arr[child];
+    }
+  }
+
+  return fputs("    }\n", out_fp) == EOF ? -1 : 0;
+}
+
+static int gv_emit_cfg_list_section(FILE *out_fp, SSAModule *module, SSAFuncName fn, const char *kind,
+                                    const char *title, int (*require_list)(SSAModule *, SSAFuncName),
+                                    SSABasicBlockList ***lists, int reverse_edges)
+{
+  SSAFunc *func = get_func(module, fn);
+
+  if (!func || gv_begin_cfg_info_section(out_fp, func, fn, kind, title) < 0)
+    return -1;
+
+  if (func->basic_blocks_count == 0 || !require_list(module, fn))
+  {
+    if (gv_emit_cfg_unavailable_node(out_fp, fn, kind) < 0)
+      return -1;
+    return fputs("    }\n", out_fp) == EOF ? -1 : 0;
+  }
+
+  for (SSABasicBlockName bb = 0; bb < func->basic_blocks_count; ++bb)
+    if (gv_emit_cfg_block_node(out_fp, func, fn, kind, bb) < 0)
+      return -1;
+
+  for (SSABasicBlockName bb = 0; bb < func->basic_blocks_count; ++bb)
+  {
+    for (SSABasicBlockList *it = (*lists)[bb]; it; it = it->next)
+    {
+      SSABasicBlockName from = reverse_edges ? it->BB : bb;
+      SSABasicBlockName to = reverse_edges ? bb : it->BB;
+      if (fprintf(out_fp, "      f%u_%s_bb%u -> f%u_%s_bb%u [color=\"#1565c0\"];\n",
+                  fn, kind, from, fn, kind, to) < 0)
+        return -1;
+    }
+  }
+
+  return fputs("    }\n", out_fp) == EOF ? -1 : 0;
+}
+
+static int gv_emit_cfg_info_function_cluster(FILE *out_fp, SSAModule *module, SSAFuncName fn)
 {
   SSAFunc *func = get_func(module, fn);
 
   if (!out_fp || !func || !func->name)
     return -1;
 
-  if (fprintf(out_fp, "  subgraph cluster_f%u_dom {\n", fn) < 0 ||
-      fputs("    color=\"#5d4037\"; pencolor=\"#5d4037\"; style=rounded; bgcolor=\"#fffaf4\";\n", out_fp) == EOF ||
+  require_entry_reachable(module, fn);
+  require_exit_reachable(module, fn);
+
+  if (fprintf(out_fp, "  subgraph cluster_f%u_cfg {\n", fn) < 0 ||
+      fputs("    color=\"#607d8b\"; pencolor=\"#607d8b\"; style=rounded; bgcolor=\"#f3f7fa\";\n", out_fp) == EOF ||
       fputs("    margin=18; labelloc=t; labeljust=l;\n", out_fp) == EOF ||
-      fputs("    label=\"DOM tree: ", out_fp) == EOF ||
+      fputs("    label=\"function: ", out_fp) == EOF ||
       gv_print_dot_escaped(out_fp, func->name) < 0 ||
       fputs("\";\n", out_fp) == EOF)
     return -1;
 
-  if (func->basic_blocks_count == 0 || func->entry_block == SSA_INVALID_BB)
-  {
-    if (gv_emit_dom_unavailable_node(out_fp, fn) < 0)
-      return -1;
-    return fputs("  }\n", out_fp) == EOF ? -1 : 0;
-  }
-
-  if (!require_Dom_tree(module, fn))
+  if (gv_emit_cfg_tree_section(out_fp, module, fn, "dom", "DOM tree", require_Dom_tree, &func->CFG_info.Dom_tree) < 0 ||
+      gv_emit_cfg_tree_section(out_fp, module, fn, "pdom", "PDOM tree", require_PDom_tree, &func->CFG_info.PDom_tree) < 0 ||
+      gv_emit_cfg_list_section(out_fp, module, fn, "preds", "predecessors", require_predecessors_list,
+                               &func->CFG_info.preds, 1) < 0 ||
+      gv_emit_cfg_list_section(out_fp, module, fn, "succs", "successors", require_successors_list,
+                               &func->CFG_info.succs, 0) < 0)
     return -1;
-
-  for (SSABasicBlockName bb = 0; bb < func->basic_blocks_count; ++bb)
-    if (gv_emit_dom_block_node(out_fp, func, fn, bb) < 0)
-      return -1;
-
-  for (SSABasicBlockName parent = 0; parent < func->basic_blocks_count; ++parent)
-  {
-    SSABasicBlockName child = func->CFG_info.Dom_tree.child_arr[parent];
-    while (child != SSA_INVALID_BB)
-    {
-      if (fprintf(out_fp, "    f%u_dom_bb%u -> f%u_dom_bb%u [color=\"#6d4c41\", penwidth=1.4];\n", fn,
-                  parent, fn, child) < 0)
-        return -1;
-      child = func->CFG_info.Dom_tree.sibling_arr[child];
-    }
-  }
 
   return fputs("  }\n", out_fp) == EOF ? -1 : 0;
 }
 
-static int gv_begin_dom_graph(FILE *out_fp)
+static int gv_begin_cfg_info_graph(FILE *out_fp)
 {
   if (!out_fp)
     return -1;
 
-  if (fputs("digraph SSA_DOM {\n", out_fp) == EOF ||
+  if (fputs("digraph SSA_CFG_INFO {\n", out_fp) == EOF ||
       fputs("  rankdir=TB;\n", out_fp) == EOF ||
       fputs("  newrank=true;\n", out_fp) == EOF ||
       fputs("  ranksep=0.8;\n", out_fp) == EOF ||
@@ -605,29 +700,29 @@ static int gv_begin_dom_graph(FILE *out_fp)
   return 0;
 }
 
-int SSA_dump_func_dom_tree_graphviz(SSAModule *module, SSAFuncName func, FILE *out_fp)
+int SSA_dump_func_cfg_info_graphviz(SSAModule *module, SSAFuncName func, FILE *out_fp)
 {
   if (!module || !out_fp || !gv_get_func(module, func))
     return -1;
 
-  if (gv_begin_dom_graph(out_fp) < 0)
+  if (gv_begin_cfg_info_graph(out_fp) < 0)
     return -1;
-  if (gv_emit_dom_function_cluster(out_fp, module, func) < 0)
+  if (gv_emit_cfg_info_function_cluster(out_fp, module, func) < 0)
     return -1;
 
   return fputs("}\n", out_fp) == EOF ? -1 : 0;
 }
 
-int SSA_dump_module_dom_tree_graphviz(SSAModule *module, FILE *out_fp)
+int SSA_dump_module_cfg_info_graphviz(SSAModule *module, FILE *out_fp)
 {
   if (!module || !out_fp)
     return -1;
 
-  if (gv_begin_dom_graph(out_fp) < 0)
+  if (gv_begin_cfg_info_graph(out_fp) < 0)
     return -1;
 
   for (SSAFuncName fn = 0; fn < module->functions_count; ++fn)
-    if (gv_emit_dom_function_cluster(out_fp, module, fn) < 0)
+    if (gv_emit_cfg_info_function_cluster(out_fp, module, fn) < 0)
       return -1;
 
   return fputs("}\n", out_fp) == EOF ? -1 : 0;
