@@ -169,10 +169,31 @@ typedef struct
 
 typedef struct
 {
+} CFGFork;
+
+typedef enum
+{
+  CFG_COMMON_BB = 0,
+  CFG_LOOP_HEADER,
+  CFG_LOOP_LATCH,
+  CFG_FORK_COND_BB,
+  CFG_FORK_JOINT
+} SSABasicBlockRoleType;
+
+typedef struct
+{
+  SSABasicBlockRoleType role;
+  int parent_idx; /*Parent may be a fork or a loop or nothing*/
 } SSABasicBlockCFGRole;
 
 typedef struct
-{  
+{
+  int loops_count;
+  CFGLoop *loops;
+
+  int forks_count;
+  CFGFork *forks;
+
   SSABasicBlockCFGRole *block_roles;
 } CFGStructureAnnotation;
 
@@ -186,12 +207,12 @@ typedef struct
   int valid_back_RPO;
   int valid_DOM;
   int valid_PDOM;
-  
+
   int valid_structure_annotation;
 
   int *entry_reachable;
   int *exit_reachable;
-  
+
   SSABasicBlockList **preds;
   SSABasicBlockList **succs;
 
@@ -204,7 +225,7 @@ typedef struct
   BBTree Dom_tree;
   BBTree PDom_tree;
 
-  CFGStructureAnnotation structure_annotation; /*INCOMPLETE*/
+  CFGStructureAnnotation structure_annotation;
 } CFGInfo;
 
 typedef struct
@@ -303,7 +324,6 @@ int is_valid_bb(SSAModule *module, SSAFuncName func, SSABasicBlockName bb);
 int is_valid_value(SSAModule *module, SSAFuncName func, SSAValName val);
 int validate_func(SSAModule *module, SSAFuncName func);
 
-
 int require_entry_reachable(SSAModule *module, SSAFuncName func);
 int require_exit_reachable(SSAModule *module, SSAFuncName func);
 
@@ -316,9 +336,6 @@ int require_successors_list(SSAModule *module, SSAFuncName func);
 int require_Dom_tree(SSAModule *module, SSAFuncName func);
 int require_PDom_tree(SSAModule *module, SSAFuncName func);
 
-
 int is_dominator_of(SSAModule *module, SSAFuncName func, SSABasicBlockName A, SSABasicBlockName B);
-
-SSABasicBlockList *find_natural_loops(SSAModule *module, SSAFuncName func);
 
 #endif

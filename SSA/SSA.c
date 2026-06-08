@@ -152,6 +152,9 @@ static void destroy_CFGInfo(SSAModule *module, SSAFuncName func)
   free(info->RPO_index);
   free(info->inverse_RPO_index);
 
+  free(info->back_RPO_index);
+  free(info->inverse_back_RPO_index);
+
   free(info->entry_reachable);
   free(info->exit_reachable);
 
@@ -1191,6 +1194,24 @@ static int BB_dfs(SSAModule *module, SSAFuncName func, SSABasicBlockName start,
   return 1;
 }
 
+static SSABasicBlockList *find_natural_loops(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function || !require_Dom_tree(module, func) || !require_successors_list(module, func))
+    return NULL;
+
+  SSABasicBlockList *headers = NULL;
+
+  for (SSABasicBlockName bb = 0; bb < function->basic_blocks_count; ++bb)
+  {
+    for (SSABasicBlockList *successor = function->CFG_info.succs[bb]; successor; successor = successor->next)
+      if (is_dominator_of(module, func, successor->BB, bb))
+        SSABasicBlockList_append(&headers, successor->BB);
+  }
+
+  return headers;
+}
+
 static int build_entry_reachable(SSAModule *module, SSAFuncName func)
 {
   SSAFunc *function = get_func(module, func);
@@ -1661,24 +1682,6 @@ int is_dominator_of(SSAModule *module, SSAFuncName func, SSABasicBlockName dom, 
     BB = function->CFG_info.Dom_tree.parent_arr[BB];
   }
   return 0;
-}
-
-SSABasicBlockList *find_natural_loops(SSAModule *module, SSAFuncName func)
-{
-  SSAFunc *function = get_func(module, func);
-  if (!function || !require_Dom_tree(module, func) || !require_successors_list(module, func))
-    return NULL;
-
-  SSABasicBlockList *headers = NULL;
-
-  for (SSABasicBlockName bb = 0; bb < function->basic_blocks_count; ++bb)
-  {
-    for (SSABasicBlockList *successor = function->CFG_info.succs[bb]; successor; successor = successor->next)
-      if (is_dominator_of(module, func, successor->BB, bb))
-        SSABasicBlockList_append(&headers, successor->BB);
-  }
-
-  return headers;
 }
 
 SSABasicBlockName CFG_get_cond_joint(SSAModule *module, SSAFuncName func, SSAInstrName cond_goto)
