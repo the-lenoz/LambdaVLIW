@@ -165,10 +165,16 @@ typedef struct
 
 typedef struct
 {
+  SSABasicBlockName header;
+  SSABasicBlockList *latches;
+  SSABasicBlockList *body;
 } CFGLoop;
 
 typedef struct
 {
+  SSABasicBlockName cond_block;
+  SSABasicBlockName joint_block;
+  SSABasicBlockList *body;
 } CFGFork;
 
 typedef enum
@@ -176,8 +182,10 @@ typedef enum
   CFG_COMMON_BB = 0,
   CFG_LOOP_HEADER,
   CFG_LOOP_LATCH,
+  CFG_LOOP_BODY,
   CFG_FORK_COND_BB,
-  CFG_FORK_JOINT
+  CFG_FORK_JOINT,
+  CFG_FORK_BODY
 } SSABasicBlockRoleType;
 
 typedef struct
@@ -298,6 +306,7 @@ int SSAInstrList_append(SSAInstrList **list, SSAInstrName instr);
 void SSAInstrList_destroy(SSAInstrList *list);
 
 int SSABasicBlockList_append(SSABasicBlockList **list, SSABasicBlockName bb);
+SSABasicBlockName SSABasicBlockList_pop(SSABasicBlockList **list);
 void SSABasicBlockList_destroy(SSABasicBlockList *list);
 
 SSAInstrList *find_all_val_usages(SSAModule *module, SSAFuncName func, SSAValName val);
@@ -335,6 +344,8 @@ int require_successors_list(SSAModule *module, SSAFuncName func);
 
 int require_Dom_tree(SSAModule *module, SSAFuncName func);
 int require_PDom_tree(SSAModule *module, SSAFuncName func);
+
+int require_CFG_structure_annotation(SSAModule *module, SSAFuncName func);
 
 int is_dominator_of(SSAModule *module, SSAFuncName func, SSABasicBlockName A, SSABasicBlockName B);
 

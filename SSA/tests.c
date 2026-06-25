@@ -4,6 +4,7 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define TEST_ASSERT(cond)                                                            \
@@ -648,6 +649,14 @@ static int test_dom_tree_and_dump(void)
   TEST_ASSERT(tree_has_child(&func->CFG_info.Dom_tree, bb_merge, bb_loop));
   TEST_ASSERT(tree_has_child(&func->CFG_info.Dom_tree, bb_merge, bb_exit));
 
+  func->CFG_info.structure_annotation.loops_count = 1;
+  func->CFG_info.structure_annotation.block_roles = calloc(func->basic_blocks_count,
+                                                           sizeof(*func->CFG_info.structure_annotation.block_roles));
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles != NULL);
+  func->CFG_info.structure_annotation.block_roles[bb_merge] = (SSABasicBlockCFGRole){CFG_LOOP_HEADER, 0};
+  func->CFG_info.structure_annotation.block_roles[bb_loop] = (SSABasicBlockCFGRole){CFG_LOOP_LATCH, 0};
+  func->CFG_info.valid_structure_annotation = 1;
+
   fp = tmpfile();
   TEST_ASSERT(fp != NULL);
   TEST_ASSERT(SSA_dump_func_cfg_info_graphviz(module, fn, fp) == 0);
@@ -657,6 +666,10 @@ static int test_dom_tree_and_dump(void)
   TEST_ASSERT(stream_contains(fp, "PDOM tree"));
   TEST_ASSERT(stream_contains(fp, "predecessors"));
   TEST_ASSERT(stream_contains(fp, "successors"));
+  TEST_ASSERT(stream_contains(fp, "structure annotation"));
+  TEST_ASSERT(stream_contains(fp, "role: loop-header"));
+  TEST_ASSERT(stream_contains(fp, "role: loop-latch"));
+  TEST_ASSERT(stream_contains(fp, "loop: 0"));
   TEST_ASSERT(stream_contains(fp, "f0_dom_bb0 -> f0_dom_bb1"));
   TEST_ASSERT(stream_contains(fp, "f0_dom_bb0 -> f0_dom_bb2"));
   TEST_ASSERT(stream_contains(fp, "f0_dom_bb0 -> f0_dom_bb3"));
@@ -664,6 +677,7 @@ static int test_dom_tree_and_dump(void)
   TEST_ASSERT(stream_contains(fp, "f0_dom_bb3 -> f0_dom_bb5"));
   TEST_ASSERT(stream_contains(fp, "f0_succs_bb0 -> f0_succs_bb1"));
   TEST_ASSERT(stream_contains(fp, "f0_preds_bb0 -> f0_preds_bb1"));
+  TEST_ASSERT(stream_contains(fp, "f0_struct_bb3 -> f0_struct_bb4"));
   fclose(fp);
 
   destroy_module(module);

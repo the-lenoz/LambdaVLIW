@@ -133,6 +133,24 @@ static void destroy_BBTree(BBTree *tree)
   free(tree->parent_arr);
 }
 
+static void destroy_CFGStructureAnnotation(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return;
+  CFGStructureAnnotation *a = &function->CFG_info.structure_annotation;
+
+  for (int i = 0; i < a->loops_count; ++i)
+  {
+    SSABasicBlockList_destroy(a->loops[i].body);
+    SSABasicBlockList_destroy(a->loops[i].latches);
+  }
+  
+  free(a->block_roles);
+  free(a->loops);
+  free(a->forks);
+}
+
 static void destroy_CFGInfo(SSAModule *module, SSAFuncName func)
 {
   SSAFunc *function = get_func(module, func);
@@ -160,6 +178,8 @@ static void destroy_CFGInfo(SSAModule *module, SSAFuncName func)
 
   destroy_BBTree(&info->Dom_tree);
   destroy_BBTree(&info->PDom_tree);
+
+  destroy_CFGStructureAnnotation(module, func);
 
   *info = (CFGInfo){};
 }
@@ -825,6 +845,17 @@ int SSABasicBlockList_append(SSABasicBlockList **list, SSABasicBlockName bb)
   return 1;
 }
 
+SSABasicBlockName SSABasicBlockList_pop(SSABasicBlockList **list)
+{
+  if (!list)
+    return SSA_INVALID_BB;
+  SSABasicBlockName bb = (*list)->BB;
+  SSABasicBlockList *tmp = *list;
+  *list = tmp->next;
+  free(tmp);
+  return bb;
+}    
+
 void SSABasicBlockList_destroy(SSABasicBlockList *list)
 {
   if (!list)
@@ -1366,7 +1397,7 @@ static int build_back_RPO(SSAModule *module, SSAFuncName func)
   for (SSABasicBlockList *loop = inf_loops; loop; loop = loop->next)
     SSABasicBlockList_append(preds_plus_infinite + function->exit_block, loop->BB);
   SSABasicBlockList_destroy(inf_loops);
-  
+
   if (!postorder_rec(module, func, visited, function->exit_block, &postorder, preds_plus_infinite))
     return free(visited), 0;
   free(visited);
@@ -1392,7 +1423,7 @@ static int build_back_RPO(SSAModule *module, SSAFuncName func)
 
   function->CFG_info.inverse_back_RPO_index = inverse_RPO;
   function->CFG_info.back_RPO_index = RPO;
-  function->CFG_info.valid_RPO = 1;
+  function->CFG_info.valid_back_RPO = 1;
   return 1;
 }
 
@@ -1665,6 +1696,115 @@ int require_PDom_tree(SSAModule *module, SSAFuncName func)
   return build_PDom_tree(module, func);
 }
 
+static SSABasicBlockList *collect_loop_body(SSAModule *module, SSAFuncName func,
+                                            SSABasicBlockName header, SSABasicBlockList *latches)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function || !require_predecessors_list(module, func))
+    return NULL;
+  int *visited = calloc(function->basic_blocks_count, sizeof(int));
+  SSABasicBlockList *body = NULL;
+
+  SSABasicBlockList_append(&body, header);
+  visited[header] = 1;
+  
+  for (SSABasicBlockList *latch = latches; latch; latch = latch->next)
+  {
+    SSABasicBlockList *stack = NULL;
+    SSABasicBlockList_append(&stack, latch->BB);
+    while (stack)
+    {
+      SSABasicBlockName BB = SSABasicBlockList_pop(&stack);
+      if (visited[BB])
+        continue;
+      visited[BB] = 1;
+      SSABasicBlockList_append(&body, BB);
+      for (SSABasicBlockList *pred = function->CFG_info.preds[BB]; pred; pred = pred->next)
+	SSABasicBlockList_append(&stack, pred->BB);
+    }
+  }
+  free(visited);
+  return body;  
+}
+
+static int calculate_loops_hierarchy(SSAModule *module, SSAFuncName func,
+                                     int start_loop_index,
+                                     SSABasicBlockList **headers_latches_arr)
+{ /* Requires PARTIALLY initialized structure annotation */
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return 0;
+
+  for (SSABasicBlockList *body_BB = function->CFG_info.structure_annotation.loops[start_loop_index].body;
+       body_BB; body_BB = body_BB->next)
+  {
+    function->CFG_info.structure_annotation.block_roles[body_BB->BB] = (SSABasicBlockCFGRole){
+        CFG_LOOP_BODY,
+        start_loop_index};
+    if (body_BB->BB != function->CFG_info.structure_annotation.loops[start_loop_index].header &&
+        headers_latches_arr[body_BB->BB])
+      calculate_loops_hierarchy(module, func, body_BB->BB, headers_latches_arr);
+  }
+  function->CFG_info.structure_annotation.block_roles[
+      function->CFG_info.structure_annotation.loops[start_loop_index].header].role = CFG_LOOP_HEADER;
+  for (SSABasicBlockList *latch = function->CFG_info.structure_annotation.loops[start_loop_index].latches;
+       latch; latch = latch->next)
+    function->CFG_info.structure_annotation.block_roles[latch->BB].role = CFG_LOOP_LATCH;
+  return 1;
+}
+
+static int build_CFG_structure_annotation(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function ||
+      !require_predecessors_list(module, func) || !require_successors_list(module, func) ||
+      !require_Dom_tree(module, func) || !require_PDom_tree(module, func))
+    return 0;
+
+  SSABasicBlockList **headers_latches_arr = calloc(function->basic_blocks_count, sizeof(SSABasicBlockList *));
+  int loops_count = 0;
+
+  SSABasicBlockList *loop_headers = find_natural_loops(module, func);
+  for (SSABasicBlockList *header = loop_headers; header; header = header->next)
+  {
+    if (!headers_latches_arr[header->BB])
+      loops_count++;
+    for (SSABasicBlockList *pred = function->CFG_info.preds[header->BB]; pred; pred = pred->next)
+      if (is_dominator_of(module, func, header->BB, pred->BB))
+        SSABasicBlockList_append(&headers_latches_arr[header->BB], pred->BB);
+  }
+
+  function->CFG_info.structure_annotation.loops_count = loops_count;
+  function->CFG_info.structure_annotation.loops = calloc(loops_count, sizeof(CFGLoop));
+  int i = 0;
+  for (SSABasicBlockList *header = loop_headers; header; header = header->next, i++)
+    function->CFG_info.structure_annotation.loops[i] = (CFGLoop){
+        header->BB,
+        headers_latches_arr[header->BB],
+        collect_loop_body(module, func, header->BB, headers_latches_arr[header->BB])};
+  SSABasicBlockList_destroy(loop_headers);
+
+  function->CFG_info.structure_annotation.block_roles = calloc(function->basic_blocks_count,
+                                                               sizeof(SSABasicBlockCFGRole));
+  
+  for (int i = 0; i < loops_count; i++)
+    calculate_loops_hierarchy(module, func, i, headers_latches_arr);
+
+  free(headers_latches_arr);
+  function->CFG_info.valid_structure_annotation = 1;
+  return 1;
+}
+int require_CFG_structure_annotation(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function)
+    return 0;
+  if (function->CFG_info.valid_structure_annotation)
+    return 1;
+
+  return build_CFG_structure_annotation(module, func);
+}
+
 int is_dominator_of(SSAModule *module, SSAFuncName func, SSABasicBlockName dom, SSABasicBlockName BB)
 {
   SSAFunc *function = get_func(module, func);
@@ -1682,18 +1822,4 @@ int is_dominator_of(SSAModule *module, SSAFuncName func, SSABasicBlockName dom, 
     BB = function->CFG_info.Dom_tree.parent_arr[BB];
   }
   return 0;
-}
-
-SSABasicBlockName CFG_get_cond_joint(SSAModule *module, SSAFuncName func, SSAInstrName cond_goto)
-{
-  SSAFunc *function = get_func(module, func);
-  if (!function || cond_goto == SSA_INVALID_INSTR)
-    return SSA_INVALID_BB;
-
-  if (!require_PDom_tree(module, func))
-    return SSA_INVALID_BB;
-
-  /*INCOMPLETE*/
-
-  return SSA_INVALID_BB;
 }

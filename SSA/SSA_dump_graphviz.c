@@ -653,6 +653,112 @@ static int gv_emit_cfg_list_section(FILE *out_fp, SSAModule *module, SSAFuncName
   return fputs("    }\n", out_fp) == EOF ? -1 : 0;
 }
 
+static const char *gv_cfg_role_name(SSABasicBlockRoleType role)
+{
+  switch (role)
+  {
+  case CFG_COMMON_BB:
+    return "common";
+  case CFG_LOOP_HEADER:
+    return "loop-header";
+  case CFG_LOOP_LATCH:
+    return "loop-latch";
+  case CFG_LOOP_BODY:
+    return "loop-body";
+  case CFG_FORK_COND_BB:
+    return "fork-cond";
+  case CFG_FORK_JOINT:
+    return "fork-joint";
+  case CFG_FORK_BODY:
+    return "fork-body";
+  default:
+    return "unknown";
+  }
+}
+
+static int gv_cfg_role_is_loop(SSABasicBlockRoleType role)
+{
+  return role == CFG_LOOP_HEADER || role == CFG_LOOP_LATCH || role == CFG_LOOP_BODY;
+}
+
+static const char *gv_cfg_structure_fill(const CFGStructureAnnotation *annotation, const SSABasicBlockCFGRole *role,
+                                         const char *default_fill)
+{
+  static const char *loop_colors[] = {
+      "#fff3cd", "#d1ecf1", "#d4edda", "#f8d7da",
+      "#e2d9f3", "#ffe5d0", "#d7f3e3", "#f1d7e8"};
+
+  if (!annotation || !role || !gv_cfg_role_is_loop(role->role) ||
+      role->parent_idx < 0 || role->parent_idx >= annotation->loops_count)
+    return default_fill;
+
+  return loop_colors[(unsigned int)role->parent_idx % (sizeof(loop_colors) / sizeof(loop_colors[0]))];
+}
+
+static int gv_emit_cfg_structure_block_node(FILE *out_fp, const SSAFunc *func, SSAFuncName fn, SSABasicBlockName bb)
+{
+  const CFGStructureAnnotation *annotation = &func->CFG_info.structure_annotation;
+  const SSABasicBlockCFGRole *role = &annotation->block_roles[bb];
+  const char *fill;
+  const char *color;
+  const char *structure_fill;
+
+  if (gv_cfg_block_colors(func, bb, &fill, &color) < 0)
+    return -1;
+
+  structure_fill = gv_cfg_structure_fill(annotation, role, fill);
+
+  if (fprintf(out_fp, "      f%u_struct_bb%u [label=\"bb%u", fn, bb, bb) < 0)
+    return -1;
+  if (bb == func->entry_block && fputs(" [entry]", out_fp) == EOF)
+    return -1;
+  if (bb == func->exit_block && fputs(" [exit]", out_fp) == EOF)
+    return -1;
+  if (fprintf(out_fp, "\\nrole: %s", gv_cfg_role_name(role->role)) < 0)
+    return -1;
+  if (gv_cfg_role_is_loop(role->role) && role->parent_idx >= 0 && role->parent_idx < annotation->loops_count)
+    if (fprintf(out_fp, "\\nloop: %d", role->parent_idx) < 0)
+      return -1;
+  if (func->CFG_info.valid_entry_reachable && !func->CFG_info.entry_reachable[bb] && fputs("\\nunreachable", out_fp) == EOF)
+    return -1;
+  if (func->CFG_info.valid_exit_reachable && !func->CFG_info.exit_reachable[bb] && fputs("\\nno-exit", out_fp) == EOF)
+    return -1;
+  if (fprintf(out_fp, "\", style=filled, fillcolor=\"%s\", color=\"%s\", penwidth=1.4];\n",
+              structure_fill, color) < 0)
+    return -1;
+
+  return 0;
+}
+
+static int gv_emit_cfg_structure_section(FILE *out_fp, SSAModule *module, SSAFuncName fn)
+{
+  SSAFunc *func = get_func(module, fn);
+
+  if (!func || gv_begin_cfg_info_section(out_fp, func, fn, "struct", "structure annotation") < 0)
+    return -1;
+
+  if (func->basic_blocks_count == 0 ||
+      (!func->CFG_info.valid_structure_annotation && !require_CFG_structure_annotation(module, fn)) ||
+      !func->CFG_info.structure_annotation.block_roles || !require_successors_list(module, fn))
+  {
+    if (gv_emit_cfg_unavailable_node(out_fp, fn, "struct") < 0)
+      return -1;
+    return fputs("    }\n", out_fp) == EOF ? -1 : 0;
+  }
+
+  for (SSABasicBlockName bb = 0; bb < func->basic_blocks_count; ++bb)
+    if (gv_emit_cfg_structure_block_node(out_fp, func, fn, bb) < 0)
+      return -1;
+
+  for (SSABasicBlockName bb = 0; bb < func->basic_blocks_count; ++bb)
+    for (SSABasicBlockList *successor = func->CFG_info.succs[bb]; successor; successor = successor->next)
+      if (fprintf(out_fp, "      f%u_struct_bb%u -> f%u_struct_bb%u [color=\"#1565c0\"];\n",
+                  fn, bb, fn, successor->BB) < 0)
+        return -1;
+
+  return fputs("    }\n", out_fp) == EOF ? -1 : 0;
+}
+
 static int gv_emit_cfg_info_function_cluster(FILE *out_fp, SSAModule *module, SSAFuncName fn)
 {
   SSAFunc *func = get_func(module, fn);
@@ -676,7 +782,8 @@ static int gv_emit_cfg_info_function_cluster(FILE *out_fp, SSAModule *module, SS
       gv_emit_cfg_list_section(out_fp, module, fn, "preds", "predecessors", require_predecessors_list,
                                &func->CFG_info.preds, 1) < 0 ||
       gv_emit_cfg_list_section(out_fp, module, fn, "succs", "successors", require_successors_list,
-                               &func->CFG_info.succs, 0) < 0)
+                               &func->CFG_info.succs, 0) < 0 ||
+      gv_emit_cfg_structure_section(out_fp, module, fn) < 0)
     return -1;
 
   return fputs("  }\n", out_fp) == EOF ? -1 : 0;
