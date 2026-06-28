@@ -57,6 +57,21 @@ static int dump_test_case(const char *case_name, const SSAModule *module)
   return 0;
 }
 
+static int dump_cfg_info_test_case(const char *case_name, SSAModule *module)
+{
+  char path[256];
+  FILE *fp = open_dump_file(case_name, "cfg.dot", path, sizeof(path));
+
+  if (!fp)
+    return -1;
+  if (SSA_dump_module_cfg_info_graphviz(module, fp) < 0)
+    return fclose(fp), -1;
+  fclose(fp);
+  printf("  dump: %s\n", path);
+
+  return 0;
+}
+
 static int stream_contains(FILE *fp, const char *needle)
 {
   char buffer[1024];
@@ -70,6 +85,35 @@ static int stream_contains(FILE *fp, const char *needle)
       return 1;
 
   return 0;
+}
+
+static int bb_list_count(const SSABasicBlockList *list)
+{
+  int count = 0;
+  for (; list; list = list->next)
+    ++count;
+  return count;
+}
+
+static int bb_list_count_bb(const SSABasicBlockList *list, SSABasicBlockName bb)
+{
+  int count = 0;
+  for (; list; list = list->next)
+    if (list->BB == bb)
+      ++count;
+  return count;
+}
+
+static const CFGLoop *find_loop_by_header(const CFGStructureAnnotation *annotation,
+                                          SSABasicBlockName header)
+{
+  if (!annotation)
+    return NULL;
+
+  for (int i = 0; i < annotation->loops_count; ++i)
+    if (annotation->loops[i].header == header)
+      return annotation->loops + i;
+  return NULL;
 }
 
 static SSAConst make_i1(int value)
@@ -649,14 +693,6 @@ static int test_dom_tree_and_dump(void)
   TEST_ASSERT(tree_has_child(&func->CFG_info.Dom_tree, bb_merge, bb_loop));
   TEST_ASSERT(tree_has_child(&func->CFG_info.Dom_tree, bb_merge, bb_exit));
 
-  func->CFG_info.structure_annotation.loops_count = 1;
-  func->CFG_info.structure_annotation.block_roles = calloc(func->basic_blocks_count,
-                                                           sizeof(*func->CFG_info.structure_annotation.block_roles));
-  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles != NULL);
-  func->CFG_info.structure_annotation.block_roles[bb_merge] = (SSABasicBlockCFGRole){CFG_LOOP_HEADER, 0};
-  func->CFG_info.structure_annotation.block_roles[bb_loop] = (SSABasicBlockCFGRole){CFG_LOOP_LATCH, 0};
-  func->CFG_info.valid_structure_annotation = 1;
-
   fp = tmpfile();
   TEST_ASSERT(fp != NULL);
   TEST_ASSERT(SSA_dump_func_cfg_info_graphviz(module, fn, fp) == 0);
@@ -684,6 +720,368 @@ static int test_dom_tree_and_dump(void)
   return 0;
 }
 
+static int test_structure_annotation_complex_cfgs(void)
+{
+  SSAModule *module;
+  SSAFuncName fn;
+  SSAFunc *func;
+  const CFGLoop *cfg_loop;
+  const CFGLoop *outer_cfg_loop;
+  const CFGLoop *inner_cfg_loop;
+  SSAValName cond;
+  int loop;
+
+  SSABasicBlockName entry;
+  SSABasicBlockName preheader1;
+  SSABasicBlockName h1;
+  SSABasicBlockName body1;
+  SSABasicBlockName side1;
+  SSABasicBlockName latch1;
+  SSABasicBlockName after1;
+  SSABasicBlockName h2;
+  SSABasicBlockName body2;
+  SSABasicBlockName latch2;
+  SSABasicBlockName exit;
+
+  SSABasicBlockName header;
+  SSABasicBlockName body_a;
+  SSABasicBlockName left;
+  SSABasicBlockName right;
+  SSABasicBlockName latch;
+
+  SSABasicBlockName outer_h;
+  SSABasicBlockName outer_body;
+  SSABasicBlockName inner_h;
+  SSABasicBlockName inner_body;
+  SSABasicBlockName inner_latch;
+  SSABasicBlockName outer_latch;
+  int outer_loop;
+  int inner_loop;
+
+  SSABasicBlockName latch_a;
+  SSABasicBlockName latch_b;
+
+  SSABasicBlockName blocks[12];
+  SSABasicBlockName large[14];
+
+  module = new_module();
+  TEST_ASSERT(module != NULL);
+
+  fn = new_func(module, "structure_two_loops", SSA_void, 0, NULL, 1);
+  TEST_ASSERT(fn != SSA_INVALID_FUNC);
+  entry = new_BB(module, fn);
+  preheader1 = new_BB(module, fn);
+  h1 = new_BB(module, fn);
+  body1 = new_BB(module, fn);
+  side1 = new_BB(module, fn);
+  latch1 = new_BB(module, fn);
+  after1 = new_BB(module, fn);
+  h2 = new_BB(module, fn);
+  body2 = new_BB(module, fn);
+  latch2 = new_BB(module, fn);
+  exit = new_BB(module, fn);
+  TEST_ASSERT(set_entry_BB(module, fn, entry) == 1);
+  TEST_ASSERT(set_exit_BB(module, fn, exit) == 1);
+  cond = emit_const_assign(module, fn, entry, SSA_i1, make_i1(1));
+  TEST_ASSERT(cond != SSA_INVALID_VAL);
+  TEST_ASSERT(emit_goto(module, fn, entry, preheader1) == 0);
+  TEST_ASSERT(emit_goto(module, fn, preheader1, h1) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, h1, cond, body1, after1) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, body1, cond, latch1, side1) == 0);
+  TEST_ASSERT(emit_goto(module, fn, side1, latch1) == 0);
+  TEST_ASSERT(emit_goto(module, fn, latch1, h1) == 0);
+  TEST_ASSERT(emit_goto(module, fn, after1, h2) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, h2, cond, body2, exit) == 0);
+  TEST_ASSERT(emit_goto(module, fn, body2, latch2) == 0);
+  TEST_ASSERT(emit_goto(module, fn, latch2, h2) == 0);
+  TEST_ASSERT(emit_return(module, fn, exit, SSA_VALUE_VOID) == 0);
+  TEST_ASSERT(require_CFG_structure_annotation(module, fn) == 1);
+  func = &module->functions[fn];
+  TEST_ASSERT(func->CFG_info.structure_annotation.loops_count == 2);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[h1].role == CFG_LOOP_HEADER);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[latch1].role == CFG_LOOP_LATCH);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[body1].role == CFG_LOOP_BODY);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[side1].role == CFG_LOOP_BODY);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[h2].role == CFG_LOOP_HEADER);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[latch2].role == CFG_LOOP_LATCH);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[body2].role == CFG_LOOP_BODY);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[h1].parent_idx !=
+              func->CFG_info.structure_annotation.block_roles[h2].parent_idx);
+  cfg_loop = find_loop_by_header(&func->CFG_info.structure_annotation, h1);
+  TEST_ASSERT(cfg_loop != NULL);
+  TEST_ASSERT(bb_list_count(cfg_loop->latches) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->latches, latch1) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, h1) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, body1) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, side1) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, latch1) == 1);
+  cfg_loop = find_loop_by_header(&func->CFG_info.structure_annotation, h2);
+  TEST_ASSERT(cfg_loop != NULL);
+  TEST_ASSERT(bb_list_count(cfg_loop->latches) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->latches, latch2) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, h2) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, body2) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, latch2) == 1);
+
+  fn = new_func(module, "structure_diamond_loop", SSA_void, 0, NULL, 1);
+  TEST_ASSERT(fn != SSA_INVALID_FUNC);
+  entry = new_BB(module, fn);
+  header = new_BB(module, fn);
+  body_a = new_BB(module, fn);
+  left = new_BB(module, fn);
+  right = new_BB(module, fn);
+  latch = new_BB(module, fn);
+  exit = new_BB(module, fn);
+  TEST_ASSERT(set_entry_BB(module, fn, entry) == 1);
+  TEST_ASSERT(set_exit_BB(module, fn, exit) == 1);
+  cond = emit_const_assign(module, fn, entry, SSA_i1, make_i1(1));
+  TEST_ASSERT(cond != SSA_INVALID_VAL);
+  TEST_ASSERT(emit_goto(module, fn, entry, header) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, header, cond, body_a, exit) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, body_a, cond, left, right) == 0);
+  TEST_ASSERT(emit_goto(module, fn, left, latch) == 0);
+  TEST_ASSERT(emit_goto(module, fn, right, latch) == 0);
+  TEST_ASSERT(emit_goto(module, fn, latch, header) == 0);
+  TEST_ASSERT(emit_return(module, fn, exit, SSA_VALUE_VOID) == 0);
+  TEST_ASSERT(require_CFG_structure_annotation(module, fn) == 1);
+  func = &module->functions[fn];
+  TEST_ASSERT(func->CFG_info.valid_structure_annotation == 1);
+  TEST_ASSERT(func->CFG_info.structure_annotation.loops_count == 1);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[header].role == CFG_LOOP_HEADER);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[body_a].role == CFG_LOOP_BODY);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[left].role == CFG_LOOP_BODY);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[right].role == CFG_LOOP_BODY);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[latch].role == CFG_LOOP_LATCH);
+
+  loop = func->CFG_info.structure_annotation.block_roles[header].parent_idx;
+  TEST_ASSERT(loop >= 0);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[body_a].parent_idx == loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[left].parent_idx == loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[right].parent_idx == loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[latch].parent_idx == loop);
+  cfg_loop = find_loop_by_header(&func->CFG_info.structure_annotation, header);
+  TEST_ASSERT(cfg_loop != NULL);
+  TEST_ASSERT(bb_list_count(cfg_loop->latches) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->latches, latch) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, header) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, body_a) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, left) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, right) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, latch) == 1);
+
+  fn = new_func(module, "structure_nested_loops", SSA_void, 0, NULL, 1);
+  TEST_ASSERT(fn != SSA_INVALID_FUNC);
+  entry = new_BB(module, fn);
+  outer_h = new_BB(module, fn);
+  outer_body = new_BB(module, fn);
+  inner_h = new_BB(module, fn);
+  inner_body = new_BB(module, fn);
+  inner_latch = new_BB(module, fn);
+  outer_latch = new_BB(module, fn);
+  exit = new_BB(module, fn);
+  TEST_ASSERT(set_entry_BB(module, fn, entry) == 1);
+  TEST_ASSERT(set_exit_BB(module, fn, exit) == 1);
+  cond = emit_const_assign(module, fn, entry, SSA_i1, make_i1(1));
+  TEST_ASSERT(cond != SSA_INVALID_VAL);
+  TEST_ASSERT(emit_goto(module, fn, entry, outer_h) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, outer_h, cond, outer_body, exit) == 0);
+  TEST_ASSERT(emit_goto(module, fn, outer_body, inner_h) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, inner_h, cond, inner_body, outer_latch) == 0);
+  TEST_ASSERT(emit_goto(module, fn, inner_body, inner_latch) == 0);
+  TEST_ASSERT(emit_goto(module, fn, inner_latch, inner_h) == 0);
+  TEST_ASSERT(emit_goto(module, fn, outer_latch, outer_h) == 0);
+  TEST_ASSERT(emit_return(module, fn, exit, SSA_VALUE_VOID) == 0);
+  TEST_ASSERT(require_Dom_tree(module, fn) == 1);
+  TEST_ASSERT(require_PDom_tree(module, fn) == 1);
+  TEST_ASSERT(require_CFG_structure_annotation(module, fn) == 1);
+  func = &module->functions[fn];
+  TEST_ASSERT(func->CFG_info.structure_annotation.loops_count == 2);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[outer_h].role == CFG_LOOP_HEADER);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[outer_body].role == CFG_LOOP_BODY);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[outer_latch].role == CFG_LOOP_LATCH);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[inner_h].role == CFG_LOOP_HEADER);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[inner_body].role == CFG_LOOP_BODY);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[inner_latch].role == CFG_LOOP_LATCH);
+  outer_loop = func->CFG_info.structure_annotation.block_roles[outer_h].parent_idx;
+  inner_loop = func->CFG_info.structure_annotation.block_roles[inner_h].parent_idx;
+  TEST_ASSERT(outer_loop >= 0);
+  TEST_ASSERT(inner_loop >= 0);
+  TEST_ASSERT(outer_loop != inner_loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[outer_body].parent_idx == outer_loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[outer_latch].parent_idx == outer_loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[inner_body].parent_idx == inner_loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[inner_latch].parent_idx == inner_loop);
+  outer_cfg_loop = find_loop_by_header(&func->CFG_info.structure_annotation, outer_h);
+  inner_cfg_loop = find_loop_by_header(&func->CFG_info.structure_annotation, inner_h);
+  TEST_ASSERT(outer_cfg_loop != NULL);
+  TEST_ASSERT(inner_cfg_loop != NULL);
+  TEST_ASSERT(bb_list_count(outer_cfg_loop->latches) == 1);
+  TEST_ASSERT(bb_list_count_bb(outer_cfg_loop->latches, outer_latch) == 1);
+  TEST_ASSERT(bb_list_count_bb(outer_cfg_loop->body, outer_h) == 1);
+  TEST_ASSERT(bb_list_count_bb(outer_cfg_loop->body, outer_body) == 1);
+  TEST_ASSERT(bb_list_count_bb(outer_cfg_loop->body, inner_h) == 1);
+  TEST_ASSERT(bb_list_count_bb(outer_cfg_loop->body, inner_body) == 1);
+  TEST_ASSERT(bb_list_count_bb(outer_cfg_loop->body, inner_latch) == 1);
+  TEST_ASSERT(bb_list_count_bb(outer_cfg_loop->body, outer_latch) == 1);
+  TEST_ASSERT(bb_list_count(inner_cfg_loop->latches) == 1);
+  TEST_ASSERT(bb_list_count_bb(inner_cfg_loop->latches, inner_latch) == 1);
+  TEST_ASSERT(bb_list_count_bb(inner_cfg_loop->body, inner_h) == 1);
+  TEST_ASSERT(bb_list_count_bb(inner_cfg_loop->body, inner_body) == 1);
+  TEST_ASSERT(bb_list_count_bb(inner_cfg_loop->body, inner_latch) == 1);
+  TEST_ASSERT(bb_list_count_bb(inner_cfg_loop->body, outer_h) == 0);
+  TEST_ASSERT(bb_list_count_bb(inner_cfg_loop->body, outer_latch) == 0);
+
+  fn = new_func(module, "structure_multi_latch_loop", SSA_void, 0, NULL, 1);
+  TEST_ASSERT(fn != SSA_INVALID_FUNC);
+  entry = new_BB(module, fn);
+  header = new_BB(module, fn);
+  body_a = new_BB(module, fn);
+  left = new_BB(module, fn);
+  right = new_BB(module, fn);
+  latch_a = new_BB(module, fn);
+  latch_b = new_BB(module, fn);
+  exit = new_BB(module, fn);
+  TEST_ASSERT(set_entry_BB(module, fn, entry) == 1);
+  TEST_ASSERT(set_exit_BB(module, fn, exit) == 1);
+  cond = emit_const_assign(module, fn, entry, SSA_i1, make_i1(1));
+  TEST_ASSERT(cond != SSA_INVALID_VAL);
+  TEST_ASSERT(emit_goto(module, fn, entry, header) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, header, cond, body_a, exit) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, body_a, cond, left, right) == 0);
+  TEST_ASSERT(emit_goto(module, fn, left, latch_a) == 0);
+  TEST_ASSERT(emit_goto(module, fn, right, latch_b) == 0);
+  TEST_ASSERT(emit_goto(module, fn, latch_a, header) == 0);
+  TEST_ASSERT(emit_goto(module, fn, latch_b, header) == 0);
+  TEST_ASSERT(emit_return(module, fn, exit, SSA_VALUE_VOID) == 0);
+  TEST_ASSERT(require_CFG_structure_annotation(module, fn) == 1);
+  func = &module->functions[fn];
+  TEST_ASSERT(func->CFG_info.structure_annotation.loops_count == 1);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[header].role == CFG_LOOP_HEADER);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[latch_a].role == CFG_LOOP_LATCH);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[latch_b].role == CFG_LOOP_LATCH);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[body_a].role == CFG_LOOP_BODY);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[left].role == CFG_LOOP_BODY);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[right].role == CFG_LOOP_BODY);
+  loop = func->CFG_info.structure_annotation.block_roles[header].parent_idx;
+  TEST_ASSERT(loop >= 0);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[body_a].parent_idx == loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[left].parent_idx == loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[right].parent_idx == loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[latch_a].parent_idx == loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[latch_b].parent_idx == loop);
+  cfg_loop = find_loop_by_header(&func->CFG_info.structure_annotation, header);
+  TEST_ASSERT(cfg_loop != NULL);
+  TEST_ASSERT(bb_list_count(cfg_loop->latches) == 2);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->latches, latch_a) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->latches, latch_b) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, header) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, body_a) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, left) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, right) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, latch_a) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->body, latch_b) == 1);
+
+  fn = new_func(module, "structure_big_goto_loop", SSA_void, 0, NULL, 1);
+  TEST_ASSERT(fn != SSA_INVALID_FUNC);
+  for (int i = 0; i < 12; ++i)
+  {
+    blocks[i] = new_BB(module, fn);
+    TEST_ASSERT(blocks[i] != SSA_INVALID_BB);
+  }
+  exit = new_BB(module, fn);
+  TEST_ASSERT(exit != SSA_INVALID_BB);
+  TEST_ASSERT(set_entry_BB(module, fn, blocks[0]) == 1);
+  TEST_ASSERT(set_exit_BB(module, fn, exit) == 1);
+  for (int i = 0; i < 11; ++i)
+    TEST_ASSERT(emit_goto(module, fn, blocks[i], blocks[i + 1]) == 0);
+  TEST_ASSERT(emit_goto(module, fn, blocks[11], blocks[0]) == 0);
+  TEST_ASSERT(emit_return(module, fn, exit, SSA_VALUE_VOID) == 0);
+  TEST_ASSERT(require_CFG_structure_annotation(module, fn) == 1);
+  func = &module->functions[fn];
+  TEST_ASSERT(func->CFG_info.structure_annotation.loops_count == 1);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[blocks[0]].role == CFG_LOOP_HEADER);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[blocks[11]].role == CFG_LOOP_LATCH);
+  for (int i = 1; i < 11; ++i)
+    TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[blocks[i]].role == CFG_LOOP_BODY);
+  cfg_loop = find_loop_by_header(&func->CFG_info.structure_annotation, blocks[0]);
+  TEST_ASSERT(cfg_loop != NULL);
+  TEST_ASSERT(bb_list_count(cfg_loop->latches) == 1);
+  TEST_ASSERT(bb_list_count_bb(cfg_loop->latches, blocks[11]) == 1);
+  for (int i = 0; i < 12; ++i)
+    TEST_ASSERT(bb_list_count_bb(cfg_loop->body, blocks[i]) == 1);
+
+  fn = new_func(module, "structure_large_reducible_cfg", SSA_void, 0, NULL, 1);
+  TEST_ASSERT(fn != SSA_INVALID_FUNC);
+  for (int i = 0; i < 14; ++i)
+  {
+    large[i] = new_BB(module, fn);
+    TEST_ASSERT(large[i] != SSA_INVALID_BB);
+  }
+  TEST_ASSERT(set_entry_BB(module, fn, large[0]) == 1);
+  TEST_ASSERT(set_exit_BB(module, fn, large[13]) == 1);
+  cond = emit_const_assign(module, fn, large[0], SSA_i1, make_i1(1));
+  TEST_ASSERT(cond != SSA_INVALID_VAL);
+  TEST_ASSERT(emit_goto(module, fn, large[0], large[1]) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, large[1], cond, large[2], large[13]) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, large[2], cond, large[3], large[4]) == 0);
+  TEST_ASSERT(emit_goto(module, fn, large[3], large[4]) == 0);
+  TEST_ASSERT(emit_goto(module, fn, large[4], large[5]) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, large[5], cond, large[6], large[10]) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, large[6], cond, large[7], large[8]) == 0);
+  TEST_ASSERT(emit_goto(module, fn, large[7], large[9]) == 0);
+  TEST_ASSERT(emit_goto(module, fn, large[8], large[5]) == 0);
+  TEST_ASSERT(emit_goto(module, fn, large[9], large[5]) == 0);
+  TEST_ASSERT(emit_cond_goto(module, fn, large[10], cond, large[11], large[12]) == 0);
+  TEST_ASSERT(emit_goto(module, fn, large[11], large[1]) == 0);
+  TEST_ASSERT(emit_goto(module, fn, large[12], large[1]) == 0);
+  TEST_ASSERT(emit_return(module, fn, large[13], SSA_VALUE_VOID) == 0);
+  TEST_ASSERT(require_CFG_structure_annotation(module, fn) == 1);
+  func = &module->functions[fn];
+  TEST_ASSERT(func->CFG_info.structure_annotation.loops_count == 2);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[1]].role == CFG_LOOP_HEADER);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[5]].role == CFG_LOOP_HEADER);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[11]].role == CFG_LOOP_LATCH);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[12]].role == CFG_LOOP_LATCH);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[8]].role == CFG_LOOP_LATCH);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[9]].role == CFG_LOOP_LATCH);
+  outer_loop = func->CFG_info.structure_annotation.block_roles[large[1]].parent_idx;
+  inner_loop = func->CFG_info.structure_annotation.block_roles[large[5]].parent_idx;
+  TEST_ASSERT(outer_loop >= 0);
+  TEST_ASSERT(inner_loop >= 0);
+  TEST_ASSERT(outer_loop != inner_loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[2]].parent_idx == outer_loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[3]].parent_idx == outer_loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[4]].parent_idx == outer_loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[10]].parent_idx == outer_loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[11]].parent_idx == outer_loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[12]].parent_idx == outer_loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[6]].parent_idx == inner_loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[7]].parent_idx == inner_loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[8]].parent_idx == inner_loop);
+  TEST_ASSERT(func->CFG_info.structure_annotation.block_roles[large[9]].parent_idx == inner_loop);
+  outer_cfg_loop = find_loop_by_header(&func->CFG_info.structure_annotation, large[1]);
+  inner_cfg_loop = find_loop_by_header(&func->CFG_info.structure_annotation, large[5]);
+  TEST_ASSERT(outer_cfg_loop != NULL);
+  TEST_ASSERT(inner_cfg_loop != NULL);
+  TEST_ASSERT(bb_list_count(outer_cfg_loop->latches) == 2);
+  TEST_ASSERT(bb_list_count_bb(outer_cfg_loop->latches, large[11]) == 1);
+  TEST_ASSERT(bb_list_count_bb(outer_cfg_loop->latches, large[12]) == 1);
+  for (int i = 1; i <= 12; ++i)
+    TEST_ASSERT(bb_list_count_bb(outer_cfg_loop->body, large[i]) == 1);
+  TEST_ASSERT(bb_list_count(inner_cfg_loop->latches) == 2);
+  TEST_ASSERT(bb_list_count_bb(inner_cfg_loop->latches, large[8]) == 1);
+  TEST_ASSERT(bb_list_count_bb(inner_cfg_loop->latches, large[9]) == 1);
+  for (int i = 5; i <= 9; ++i)
+    TEST_ASSERT(bb_list_count_bb(inner_cfg_loop->body, large[i]) == 1);
+  TEST_ASSERT(bb_list_count_bb(inner_cfg_loop->body, large[1]) == 0);
+  TEST_ASSERT(bb_list_count_bb(inner_cfg_loop->body, large[10]) == 0);
+
+  TEST_ASSERT(dump_cfg_info_test_case("structure_annotation", module) == 0);
+
+  destroy_module(module);
+  return 0;
+}
+
 typedef int (*test_fn)(void);
 
 typedef struct
@@ -703,6 +1101,7 @@ int main(void)
       {"dump_func_args", test_dump_func_args},
       {"bool_cast_dump", test_bool_cast_dump},
       {"dom_tree_and_dump", test_dom_tree_and_dump},
+      {"structure_annotation_complex_cfgs", test_structure_annotation_complex_cfgs},
   };
   int failed = 0;
   size_t i;

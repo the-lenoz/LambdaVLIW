@@ -145,10 +145,12 @@ static void destroy_CFGStructureAnnotation(SSAModule *module, SSAFuncName func)
     SSABasicBlockList_destroy(a->loops[i].body);
     SSABasicBlockList_destroy(a->loops[i].latches);
   }
-  
-  free(a->block_roles);
   free(a->loops);
+
+  // TODO
   free(a->forks);
+
+  free(a->block_roles);
 }
 
 static void destroy_CFGInfo(SSAModule *module, SSAFuncName func)
@@ -854,7 +856,7 @@ SSABasicBlockName SSABasicBlockList_pop(SSABasicBlockList **list)
   *list = tmp->next;
   free(tmp);
   return bb;
-}    
+}
 
 void SSABasicBlockList_destroy(SSABasicBlockList *list)
 {
@@ -1301,7 +1303,7 @@ static int is_infinite_loop_header(SSAModule *module, SSAFuncName func, SSABasic
   if (!function || !require_exit_reachable(module, func) || !is_valid_bb(module, func, header))
     return 0;
 
-  return function->CFG_info.exit_reachable[header];
+  return !function->CFG_info.exit_reachable[header];
 }
 
 static SSABasicBlockList *find_infinite_loops(SSAModule *module, SSAFuncName func)
@@ -1634,8 +1636,8 @@ static int build_PDom_tree(SSAModule *module, SSAFuncName func)
   while (changed)
   {
     changed = 0;
-    for (SSABasicBlockName *BB = function->CFG_info.inverse_RPO_index;
-         BB < function->CFG_info.inverse_RPO_index + function->basic_blocks_count;
+    for (SSABasicBlockName *BB = function->CFG_info.inverse_back_RPO_index;
+         BB < function->CFG_info.inverse_back_RPO_index + function->basic_blocks_count;
          ++BB)
     {
       if (*BB == SSA_INVALID_BB || *BB == function->exit_block)
@@ -1696,6 +1698,7 @@ int require_PDom_tree(SSAModule *module, SSAFuncName func)
   return build_PDom_tree(module, func);
 }
 
+/*Returns list of loop body basic blocks. Header is the last*/
 static SSABasicBlockList *collect_loop_body(SSAModule *module, SSAFuncName func,
                                             SSABasicBlockName header, SSABasicBlockList *latches)
 {
@@ -1707,7 +1710,7 @@ static SSABasicBlockList *collect_loop_body(SSAModule *module, SSAFuncName func,
 
   SSABasicBlockList_append(&body, header);
   visited[header] = 1;
-  
+
   for (SSABasicBlockList *latch = latches; latch; latch = latch->next)
   {
     SSABasicBlockList *stack = NULL;
@@ -1720,16 +1723,16 @@ static SSABasicBlockList *collect_loop_body(SSAModule *module, SSAFuncName func,
       visited[BB] = 1;
       SSABasicBlockList_append(&body, BB);
       for (SSABasicBlockList *pred = function->CFG_info.preds[BB]; pred; pred = pred->next)
-	SSABasicBlockList_append(&stack, pred->BB);
+        SSABasicBlockList_append(&stack, pred->BB);
     }
   }
   free(visited);
-  return body;  
+  return body;
 }
 
 static int calculate_loops_hierarchy(SSAModule *module, SSAFuncName func,
                                      int start_loop_index,
-                                     SSABasicBlockList **headers_latches_arr)
+                                     SSABasicBlockList **headers_latches_arr, int *loop_indices_by_header)
 { /* Requires PARTIALLY initialized structure annotation */
   SSAFunc *function = get_func(module, func);
   if (!function)
@@ -1743,10 +1746,10 @@ static int calculate_loops_hierarchy(SSAModule *module, SSAFuncName func,
         start_loop_index};
     if (body_BB->BB != function->CFG_info.structure_annotation.loops[start_loop_index].header &&
         headers_latches_arr[body_BB->BB])
-      calculate_loops_hierarchy(module, func, body_BB->BB, headers_latches_arr);
+      calculate_loops_hierarchy(module, func, loop_indices_by_header[body_BB->BB],
+                                headers_latches_arr, loop_indices_by_header);
   }
-  function->CFG_info.structure_annotation.block_roles[
-      function->CFG_info.structure_annotation.loops[start_loop_index].header].role = CFG_LOOP_HEADER;
+  function->CFG_info.structure_annotation.block_roles[function->CFG_info.structure_annotation.loops[start_loop_index].header].role = CFG_LOOP_HEADER;
   for (SSABasicBlockList *latch = function->CFG_info.structure_annotation.loops[start_loop_index].latches;
        latch; latch = latch->next)
     function->CFG_info.structure_annotation.block_roles[latch->BB].role = CFG_LOOP_LATCH;
@@ -1768,29 +1771,44 @@ static int build_CFG_structure_annotation(SSAModule *module, SSAFuncName func)
   for (SSABasicBlockList *header = loop_headers; header; header = header->next)
   {
     if (!headers_latches_arr[header->BB])
+    {
       loops_count++;
-    for (SSABasicBlockList *pred = function->CFG_info.preds[header->BB]; pred; pred = pred->next)
-      if (is_dominator_of(module, func, header->BB, pred->BB))
-        SSABasicBlockList_append(&headers_latches_arr[header->BB], pred->BB);
+      for (SSABasicBlockList *pred = function->CFG_info.preds[header->BB]; pred; pred = pred->next)
+        if (is_dominator_of(module, func, header->BB, pred->BB))
+          SSABasicBlockList_append(&headers_latches_arr[header->BB], pred->BB);
+    }
   }
 
   function->CFG_info.structure_annotation.loops_count = loops_count;
   function->CFG_info.structure_annotation.loops = calloc(loops_count, sizeof(CFGLoop));
-  int i = 0;
-  for (SSABasicBlockList *header = loop_headers; header; header = header->next, i++)
+  SSABasicBlockName header = 0;
+
+  int *loop_indices_by_header = calloc(function->basic_blocks_count, sizeof(int));
+
+  for (int i = 0; i < loops_count; i++)
+  {
+    while (header < function->basic_blocks_count && !headers_latches_arr[header])
+      ++header;
+
+    if (header >= function->basic_blocks_count)
+      break;
+    loop_indices_by_header[header] = i;
     function->CFG_info.structure_annotation.loops[i] = (CFGLoop){
-        header->BB,
-        headers_latches_arr[header->BB],
-        collect_loop_body(module, func, header->BB, headers_latches_arr[header->BB])};
+        header,
+        headers_latches_arr[header],
+        collect_loop_body(module, func, header, headers_latches_arr[header])};
+    ++header;
+  }
   SSABasicBlockList_destroy(loop_headers);
 
   function->CFG_info.structure_annotation.block_roles = calloc(function->basic_blocks_count,
                                                                sizeof(SSABasicBlockCFGRole));
-  
+
   for (int i = 0; i < loops_count; i++)
-    calculate_loops_hierarchy(module, func, i, headers_latches_arr);
+    calculate_loops_hierarchy(module, func, i, headers_latches_arr, loop_indices_by_header);
 
   free(headers_latches_arr);
+  free(loop_indices_by_header);
   function->CFG_info.valid_structure_annotation = 1;
   return 1;
 }

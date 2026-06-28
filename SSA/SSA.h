@@ -191,7 +191,7 @@ typedef enum
 typedef struct
 {
   SSABasicBlockRoleType role;
-  int parent_idx; /*Parent may be a fork or a loop or nothing*/
+  int parent_idx; /*Parent loop or nothing*/
 } SSABasicBlockCFGRole;
 
 typedef struct
