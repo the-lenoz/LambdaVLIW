@@ -226,7 +226,7 @@ static int test_simple_call_and_return(void)
   TEST_ASSERT(caller_fn->entry_block == bb_entry);
   TEST_ASSERT(caller_fn->exit_block == bb_exit);
 
-  call_val = emit_call_assign(module, caller, bb_entry, callee, NULL, 1);
+  call_val = emit_call_assign(module, caller, bb_entry, callee, NULL, 1, 0);
   TEST_ASSERT(call_val != SSA_INVALID_VAL);
   TEST_ASSERT(caller_fn->values_count == 1);
   TEST_ASSERT(caller_fn->values[call_val].kind == SSA_VALUE_CALL);
@@ -313,7 +313,7 @@ static int test_branch_and_phi(void)
 
   main_fn = &module->functions[main_fn_name];
 
-  cond_val = emit_call_assign(module, main_fn_name, bb_entry, cond_fn, NULL, 0);
+  cond_val = emit_call_assign(module, main_fn_name, bb_entry, cond_fn, NULL, 0, 0);
   TEST_ASSERT(cond_val != SSA_INVALID_VAL);
   TEST_ASSERT(main_fn->values[cond_val].type == SSA_i1);
 
@@ -327,13 +327,13 @@ static int test_branch_and_phi(void)
 
   args_true = NULL;
   TEST_ASSERT(ArgList_append(&args_true, cond_val) == 0);
-  true_val = emit_call_assign(module, main_fn_name, bb_true, calc_fn, args_true, 0);
+  true_val = emit_call_assign(module, main_fn_name, bb_true, calc_fn, args_true, 0, 0);
   TEST_ASSERT(true_val != SSA_INVALID_VAL);
   TEST_ASSERT(emit_goto(module, main_fn_name, bb_true, bb_merge) == 0);
 
   args_false = NULL;
   TEST_ASSERT(ArgList_append(&args_false, cond_val) == 0);
-  false_val = emit_call_assign(module, main_fn_name, bb_false, calc_fn, args_false, 0);
+  false_val = emit_call_assign(module, main_fn_name, bb_false, calc_fn, args_false, 0, 0);
   TEST_ASSERT(false_val != SSA_INVALID_VAL);
   TEST_ASSERT(emit_goto(module, main_fn_name, bb_false, bb_merge) == 0);
 
@@ -404,18 +404,18 @@ static int test_invalid_inputs(void)
   TEST_ASSERT(emit_const_assign(module, fn, bb_entry, SSA_void, make_i32(0)) == SSA_INVALID_VAL);
   TEST_ASSERT(emit_phi_assign(module, fn, bb_entry, SSA_void) == SSA_INVALID_VAL);
 
-  TEST_ASSERT(emit_call_assign(module, fn, bb_entry, SSA_INVALID_FUNC, NULL, 0) == SSA_INVALID_VAL);
-  TEST_ASSERT(emit_call_assign(module, fn, bb_entry, void_fn, NULL, 0) == SSA_INVALID_VAL);
+  TEST_ASSERT(emit_call_assign(module, fn, bb_entry, SSA_INVALID_FUNC, NULL, 0, 0) == SSA_INVALID_VAL);
+  TEST_ASSERT(emit_call_assign(module, fn, bb_entry, void_fn, NULL, 0, 0) == SSA_INVALID_VAL);
   TEST_ASSERT(emit_void_call(module, fn, bb_entry, fn, NULL) < 0);
   TEST_ASSERT(emit_void_call(module, fn, bb_entry, void_fn, NULL) == 0);
 
-  cond = emit_call_assign(module, fn, bb_entry, fn, NULL, 0);
+  cond = emit_call_assign(module, fn, bb_entry, fn, NULL, 0, 0);
   TEST_ASSERT(cond != SSA_INVALID_VAL);
 
   args = NULL;
   TEST_ASSERT(ArgList_append(&args, int_val) == 0);
-  TEST_ASSERT(emit_call_assign(module, fn, bb_entry, fn, args, 0) == SSA_INVALID_VAL);
-  TEST_ASSERT(emit_call_assign(module, fn, bb_entry, takes_i32, NULL, 0) == SSA_INVALID_VAL);
+  TEST_ASSERT(emit_call_assign(module, fn, bb_entry, fn, args, 0, 0) == SSA_INVALID_VAL);
+  TEST_ASSERT(emit_call_assign(module, fn, bb_entry, takes_i32, NULL, 0, 0) == SSA_INVALID_VAL);
 
   TEST_ASSERT(emit_return(module, fn, bb_entry, cond) < 0);
   TEST_ASSERT(emit_cond_goto(module, fn, bb_entry, SSA_INVALID_VAL, bb_entry, bb_exit) < 0);
@@ -424,7 +424,7 @@ static int test_invalid_inputs(void)
   TEST_ASSERT(emit_cond_goto(module, fn, bb_entry, cond, bb_entry, bb_exit) == 0);
   TEST_ASSERT(emit_goto(module, fn, bb_entry, bb_exit) < 0);
 
-  retv = emit_call_assign(module, fn, bb_exit, fn, NULL, 0);
+  retv = emit_call_assign(module, fn, bb_exit, fn, NULL, 0, 0);
   TEST_ASSERT(retv != SSA_INVALID_VAL);
   TEST_ASSERT(emit_return(module, fn, bb_exit, SSA_INVALID_VAL) < 0);
   TEST_ASSERT(emit_return(module, fn, bb_exit, retv) == 0);

@@ -153,17 +153,13 @@ static int gv_print_const(FILE *out_fp, SSAValueType type, SSAConst value)
   switch (type)
   {
   case SSA_i1:
-    return fprintf(out_fp, "%d", value.i1_value ? 1 : 0) < 0 ? -1 : 0;
   case SSA_i8:
-    return fprintf(out_fp, "%d", (int)value.i8_value) < 0 ? -1 : 0;
   case SSA_i32:
-    return fprintf(out_fp, "%d", value.i32_value) < 0 ? -1 : 0;
   case SSA_i64:
-    return fprintf(out_fp, "%lld", (long long)value.i64_value) < 0 ? -1 : 0;
+    return fprintf(out_fp, "%lld", (long long)value.int_value) < 0 ? -1 : 0;
   case SSA_fp32:
-    return fprintf(out_fp, "%g", value.fp32_value) < 0 ? -1 : 0;
   case SSA_fp64:
-    return fprintf(out_fp, "%g", value.fp64_value) < 0 ? -1 : 0;
+    return fprintf(out_fp, "%g", value.float_value) < 0 ? -1 : 0;
   default:
     return -1;
   }
@@ -205,7 +201,7 @@ static int gv_emit_value_row(FILE *out_fp, const SSAModule *module, const SSAFun
     break;
   case SSA_VALUE_CALL:
   {
-    const SSAFunc *callee = gv_get_func(module, value->expr.call.calee_name);
+    const SSAFunc *callee = gv_get_func(module, value->expr.call.callee_name);
 
     if (!callee || !callee->name)
       return -1;
@@ -214,7 +210,7 @@ static int gv_emit_value_row(FILE *out_fp, const SSAModule *module, const SSAFun
         gv_print_arg_list(out_fp, value->expr.call.args) < 0)
       return -1;
 
-    if (value->is_const && fputs(" [const]", out_fp) == EOF)
+    if (value->is_constexpr && fputs(" [const]", out_fp) == EOF)
       return -1;
     break;
   }
@@ -236,7 +232,7 @@ static int gv_emit_void_call_row(FILE *out_fp, const SSAModule *module, const _F
   if (!module || !call || gv_begin_line_row(out_fp) < 0)
     return -1;
 
-  callee = gv_get_func(module, call->calee_name);
+  callee = gv_get_func(module, call->callee_name);
   if (!callee || !callee->name)
     return -1;
 
@@ -397,8 +393,9 @@ static int gv_emit_function_cluster(FILE *out_fp, const SSAModule *module, SSAFu
   }
 
   for (SSABasicBlockName bb = 0; bb < func->basic_blocks_count; ++bb)
-    if (gv_emit_block_node(out_fp, module, func, fn, bb) < 0)
-      return -1;
+    if (is_valid_bb(module, fn, bb))
+      if (gv_emit_block_node(out_fp, module, func, fn, bb) < 0)
+        return -1;
 
   if (func->entry_block != SSA_INVALID_BB)
     if (fprintf(out_fp, "    f%u_entry -> f%u_bb%u [label=\"entry\", color=\"#2e7d32\", penwidth=1.4];\n", fn, fn,
@@ -407,6 +404,8 @@ static int gv_emit_function_cluster(FILE *out_fp, const SSAModule *module, SSAFu
 
   for (SSABasicBlockName bb = 0; bb < func->basic_blocks_count; ++bb)
   {
+    if (!is_valid_bb(module, fn, bb))
+      continue;
     const SSABlockTerminator *term = gv_get_block_terminator(func, bb);
     if (!term)
       continue;
@@ -440,6 +439,8 @@ static int gv_emit_function_cluster(FILE *out_fp, const SSAModule *module, SSAFu
 
     for (SSABasicBlockName bb = 0; bb < func->basic_blocks_count; ++bb)
     {
+      if (!is_valid_bb(module, fn, bb))
+        continue;
       const SSABlockTerminator *term = gv_get_block_terminator(func, bb);
 
       if (!term || term->type != SSA_TERM_RETURN)

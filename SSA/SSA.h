@@ -54,18 +54,14 @@ typedef struct _ArgList
 
 typedef struct
 {
-  SSAFuncName calee_name;
+  SSAFuncName callee_name;
   ArgList *args;
 } _FuncCall;
 
 typedef union
 {
-  int64_t i1_value;
-  int64_t i8_value;
-  int64_t i32_value;
-  int64_t i64_value;
-  double fp32_value;
-  double fp64_value;
+  int64_t int_value;
+  double float_value;
 } SSAConst;
 
 typedef struct
@@ -95,9 +91,10 @@ typedef struct
 {
   SSAValueKind kind;
   SSAValueType type;
-  int is_const; /*Ability of bijection between name and expression*/
+  int is_constexpr; /*Ability of bijection between name and expression*/
   _SSAExpr expr;
   SSABasicBlockName parent_name;
+  int is_pure;
 } SSAValue;
 
 typedef enum
@@ -133,6 +130,8 @@ struct _instr
 
   SSAInstrName prev;
   SSAInstrName next;
+
+  SSABasicBlockName parent;
 };
 
 typedef struct
@@ -142,6 +141,7 @@ typedef struct
   SSAInstrName first_instr;
   SSAInstrName last_instr;
 
+  int alive;
 } SSABasicBlock;
 
 typedef struct _i_list
@@ -275,6 +275,7 @@ SSAFuncName new_func(SSAModule *module, const char *name,
                      const SSAValueType *arg_types, int is_global);
 
 SSABasicBlockName new_BB(SSAModule *module, SSAFuncName func);
+void destroy_BB(const SSAModule *module, SSAFuncName func, SSABasicBlockName BB);
 
 int set_entry_BB(SSAModule *module, SSAFuncName func, SSABasicBlockName BB);
 int set_exit_BB(SSAModule *module, SSAFuncName func, SSABasicBlockName BB);
@@ -282,7 +283,7 @@ int set_exit_BB(SSAModule *module, SSAFuncName func, SSABasicBlockName BB);
 SSAValName emit_phi_assign(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
                            SSAValueType type);
 SSAValName emit_call_assign(SSAModule *module, SSAFuncName func,
-                            SSABasicBlockName BB, SSAFuncName callee, ArgList *arg_list, int is_constexpr);
+                            SSABasicBlockName BB, SSAFuncName callee, ArgList *arg_list, int is_constexpr, int is_pure);
 SSAValName get_arg_val_name(SSAModule *module, SSAFuncName func, unsigned int arg_index);
 SSAValName emit_const_assign(SSAModule *module, SSAFuncName func,
                              SSABasicBlockName BB, SSAValueType type, SSAConst val);
@@ -312,7 +313,7 @@ void SSABasicBlockList_destroy(SSABasicBlockList *list);
 SSAInstrList *find_all_val_usages(SSAModule *module, SSAFuncName func, SSAValName val);
 int rename_all_val_uses(SSAModule *module, SSAFuncName func, SSAValName old, SSAValName new);
 
-SSAFunc *get_func(SSAModule *module, SSAFuncName fn);
+SSAFunc *get_func(const SSAModule *module, SSAFuncName fn);
 int bb_has_terminator(SSAModule *module, SSAFuncName func, SSABasicBlockName bb);
 SSAInstrName get_BB_terminator(SSAModule *module, SSAFuncName fn, SSABasicBlockName BB);
 int clear_BB_terminator(SSAModule *module, SSAFuncName fn, SSABasicBlockName BB);
@@ -329,7 +330,7 @@ int replace_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB,
                   SSAInstrName place, SSAInstr instr);
 int remove_instr(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAInstrName instr);
 
-int is_valid_bb(SSAModule *module, SSAFuncName func, SSABasicBlockName bb);
+int is_valid_bb(const SSAModule *module, SSAFuncName func, SSABasicBlockName bb);
 int is_valid_value(SSAModule *module, SSAFuncName func, SSAValName val);
 int validate_func(SSAModule *module, SSAFuncName func);
 

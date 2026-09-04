@@ -71,6 +71,13 @@ static int is_constexpr(const char *func)
   }
 }
 
+static int is_pure(const char *func)
+{
+  if (is_constexpr(func)) return 1;
+  // todo
+  return 0;
+}
+
 SSAValName compile_expr(AST *expr, VarMappingList *vars, HTable *funcs,
                         SSAModule *module, SSAFuncName fn, SSABasicBlockName *active_BB)
 {
@@ -79,7 +86,7 @@ SSAValName compile_expr(AST *expr, VarMappingList *vars, HTable *funcs,
   if (expr->type == CONST_NUM)
   {
     SSAConst val;
-    sscanf(expr->value, "%ld", &val.i64_value);
+    sscanf(expr->value, "%ld", &val.int_value);
     SSAValName const_val_name = emit_const_assign(module, fn, *active_BB, SSA_i64, val);
     return const_val_name;
   }
@@ -144,7 +151,8 @@ SSAValName compile_expr(AST *expr, VarMappingList *vars, HTable *funcs,
   int64_t calee;
   if (!ht_get(funcs, GET_OP(expr), (void **)&calee))
     return fprintf(stderr, "Fatal: usage of undefined function '%s'.\n", GET_OP(expr)), SSA_INVALID_VAL;
-  return emit_call_assign(module, fn, *active_BB, (SSAFuncName)calee, args, is_constexpr(GET_OP(expr)));
+  return emit_call_assign(module, fn, *active_BB, (SSAFuncName)calee, args,
+    is_constexpr(GET_OP(expr)), is_pure(GET_OP(expr)));
   STR_MATCH_END
 }
 

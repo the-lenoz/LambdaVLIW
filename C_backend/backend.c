@@ -4,6 +4,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+static int emit_indent(int indent, FILE *fp)
+{
+  if (!fp)
+    return 0;
+  for (int i = 0; i < indent; ++i)
+    putc(' ', fp);
+  return 1;
+}
+
 static int is_c_name(const char *name)
 {
   if (!name)
@@ -141,6 +150,8 @@ int dummy_SSAFunc_to_C(SSAModule *module, SSAFuncName func, FILE *fp)
 
   for (SSABasicBlockName i = 0; i < fn->basic_blocks_count; ++i)
   {
+    if (!is_valid_bb(module, func, i))
+      continue;
     fprintf(fp, "      case %d:\n", i);
     for (SSAInstrName instr = fn->basic_blocks[i].first_instr; instr; instr = instr->next)
     {
@@ -152,7 +163,7 @@ int dummy_SSAFunc_to_C(SSAModule *module, SSAFuncName func, FILE *fp)
         {
         case SSA_VALUE_CONST:
           fprintf(fp, "        v%d = ", val);
-          fprintf(fp, "%ld;\n", fn->values[val].expr.cnst.i64_value);
+          fprintf(fp, "%ld;\n", fn->values[val].expr.cnst.int_value);
           break;
         case SSA_VALUE_BOOL_CAST:
           fprintf(fp, "        v%d = ", val);
@@ -160,19 +171,19 @@ int dummy_SSAFunc_to_C(SSAModule *module, SSAFuncName func, FILE *fp)
           break;
         case SSA_VALUE_CALL:
           fprintf(fp, "        v%d = ", val);
-          if (is_bin_operator(module, fn->values[val].expr.call.calee_name))
+          if (is_bin_operator(module, fn->values[val].expr.call.callee_name))
           {
-            if (!strcmp(module->functions[fn->values[val].expr.call.calee_name].name, "="))
+            if (!strcmp(module->functions[fn->values[val].expr.call.callee_name].name, "="))
               fprintf(fp, "v%d == v%d;\n",
                       ARG_FIRST(fn->values[val].expr.call.args), ARG_SECOND(fn->values[val].expr.call.args));
             else
               fprintf(fp, "v%d %s v%d;\n", ARG_FIRST(fn->values[val].expr.call.args),
-                      module->functions[fn->values[val].expr.call.calee_name].name,
+                      module->functions[fn->values[val].expr.call.callee_name].name,
                       ARG_SECOND(fn->values[val].expr.call.args));
           }
           else
           {
-            fprintf(fp, "%s(", module->functions[fn->values[val].expr.call.calee_name].name);
+            fprintf(fp, "%s(", module->functions[fn->values[val].expr.call.callee_name].name);
             for (ArgList *args = fn->values[val].expr.call.args; args; args = args->next)
             {
               fprintf(fp, "v%d", args->name);
@@ -188,7 +199,7 @@ int dummy_SSAFunc_to_C(SSAModule *module, SSAFuncName func, FILE *fp)
         break;
       case SSA_INSTR_VOID_CALL:
         call = instr->call;
-        fprintf(fp, "%s(", module->functions[call.calee_name].name);
+        fprintf(fp, "%s(", module->functions[call.callee_name].name);
         for (ArgList *args = call.args; args; args = args->next)
         {
           fprintf(fp, "v%d", args->name);
@@ -228,91 +239,91 @@ int dummy_SSAFunc_to_C(SSAModule *module, SSAFuncName func, FILE *fp)
   fprintf(fp, "    }\n  }\n  return 0;\n}\n\n");
   return 1;
 }
-
-typedef enum
-{
-  DFS_PENDING = 0,
-  DFS_IN_PROGRESS,
-  DFS_PROCESSED
-} DFSStatus;
-static int find_CFG_loop_DFS(SSAModule *module, SSAFuncName func,
-                             SSABasicBlockName bb, DFSStatus *blocks_status)
-{
-  if (!blocks_status)
-    return 1;
-  blocks_status[bb] = DFS_IN_PROGRESS;
-
-  SSAInstrName term = get_BB_terminator(module, func, bb);
-  switch (term->term.type)
-  {
-  case SSA_TERM_COND_GOTO:
-    if (blocks_status[term->term.true_dst] == DFS_IN_PROGRESS ||
-        blocks_status[term->term.false_dst] == DFS_IN_PROGRESS ||
-        blocks_status[term->term.true_dst] == DFS_PENDING &&
-            find_CFG_loop_DFS(module, func, term->term.true_dst, blocks_status) ||
-        blocks_status[term->term.false_dst] == DFS_PENDING &&
-            find_CFG_loop_DFS(module, func, term->term.false_dst, blocks_status))
-      return 1;
-    break;
-  case SSA_TERM_GOTO:
-    if (blocks_status[term->term.true_dst] == DFS_IN_PROGRESS ||
-        blocks_status[term->term.true_dst] == DFS_PENDING &&
-            find_CFG_loop_DFS(module, func, term->term.true_dst, blocks_status))
-      return 1;
-    break;
-  default:
-    break;
-  }
-
-  blocks_status[bb] = DFS_PROCESSED;
-  return 0;
-}
-
-static int is_acyclic_CFG(SSAModule *module, SSAFuncName func)
-{
-  SSAFunc *function = get_func(module, func);
-  if (!function)
-    return 0;
-
-  DFSStatus *blocks_status = calloc(function->basic_blocks_count, sizeof(DFSStatus));
-  int result = 1;
-  for (SSABasicBlockName bb = 0; bb < function->basic_blocks_count; ++bb)
-  {
-    if (blocks_status[bb] == DFS_PENDING && find_CFG_loop_DFS(module, func, bb, blocks_status))
-    {
-      result = 0;
-      break;
-    }
-  }
-  free(blocks_status);
-
-  return result;
-}
-
 static int is_reducible_CFG(SSAModule *module, SSAFuncName func)
 {
-  if (is_acyclic_CFG(module, func))
-    return 1;
-  return 0;
+  return 1;
+}
+
+int emit_BB(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, FILE *fp, int indent)
+{
+  return 1;
 }
 
 int SSAFunc_to_C(SSAModule *module, SSAFuncName func, FILE *fp)
 {
-  SSAFunc *function = get_func(module, func);
-  if (!function || !fp)
-    return 0;
-
   if (!is_reducible_CFG(module, func))
     return dummy_SSAFunc_to_C(module, func, fp);
 
-  /*Only if's yet*/
-  
-  
+  if (!fp || !require_CFG_structure_annotation(module, func))
+    return 0;
+
+  SSAFunc *function = get_func(module, func);
+
+  int *loops_remaining_latches = calloc(function->CFG_info.structure_annotation.loops_count, sizeof(int));
+  for (int i = 0; i < function->CFG_info.structure_annotation.loops_count; ++i)
+  {
+    int len = 0;
+    for (SSABasicBlockList *l = function->CFG_info.structure_annotation.loops[i].latches; l; l = l->next)
+      len++;
+
+    loops_remaining_latches[i] = len;
+  }
+
+  /*Only loops yet, no forks*/
+  SSABasicBlockName active_BB = function->entry_block;
+
+  fprintf(fp, "int64_t %s(", function->name);
+  for (int i = 0; i < function->args_count; ++i)
+  {
+    fprintf(fp, "int64_t v%d", i);
+    if (i < function->args_count - 1)
+      fprintf(fp, ", ");
+  }
+  fprintf(fp, ") {\n");
+  int indent = 2;
+
+  do
+  {
+    if (!is_valid_bb(module, func, active_BB))
+      return 0;
+    SSABasicBlockCFGRole role = function->CFG_info.structure_annotation.block_roles[active_BB];
+    switch (role.role)
+    {
+    case CFG_LOOP_HEADER:
+      emit_indent(indent, fp);
+      fprintf(fp, "while (1) {\n");
+      indent += 2;
+      emit_BB(module, func, active_BB, fp, indent);
+      break;
+    case CFG_LOOP_LATCH:
+      loops_remaining_latches[role.parent_idx]--;
+      emit_BB(module, func, active_BB, fp, indent);
+      if (loops_remaining_latches[role.parent_idx])
+      {
+        emit_indent(indent, fp);
+        fprintf(fp, "continue;\n");
+      }
+      else
+      {
+        indent -= 2;
+        emit_indent(indent, fp);
+        fprintf(fp, "}\n");
+      }
+      break;
+    default:
+      break;
+    }
+    active_BB = get_BB_terminator(module, func, active_BB)->term.true_dst;
+
+  } while (active_BB != function->exit_block); // TODO - no-exit cfg's cause hang
+
   return 1;
 }
 
 int SSA_module_to_C(SSAModule *module, FILE *fp, int dummy)
 {
+  dummy = 1; // TODO
+
   if (!module || !fp)
     return 0;
 

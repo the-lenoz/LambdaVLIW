@@ -53,17 +53,13 @@ static int dump_print_const(FILE *out_fp, SSAValueType type, SSAConst value)
   switch (type)
   {
   case SSA_i1:
-    return fprintf(out_fp, "%d", value.i1_value ? 1 : 0) < 0 ? -1 : 0;
   case SSA_i8:
-    return fprintf(out_fp, "%d", (int)value.i8_value) < 0 ? -1 : 0;
   case SSA_i32:
-    return fprintf(out_fp, "%d", value.i32_value) < 0 ? -1 : 0;
   case SSA_i64:
-    return fprintf(out_fp, "%lld", (long long)value.i64_value) < 0 ? -1 : 0;
+    return fprintf(out_fp, "%lld", (long long)value.int_value) < 0 ? -1 : 0;
   case SSA_fp32:
-    return fprintf(out_fp, "%g", value.fp32_value) < 0 ? -1 : 0;
   case SSA_fp64:
-    return fprintf(out_fp, "%g", value.fp64_value) < 0 ? -1 : 0;
+    return fprintf(out_fp, "%g", value.float_value) < 0 ? -1 : 0;
   default:
     return -1;
   }
@@ -95,7 +91,7 @@ static int dump_emit_call(FILE *out_fp, const SSAModule *module, const _FuncCall
   if (!module || !call)
     return -1;
 
-  callee = dump_get_func(module, call->calee_name);
+  callee = dump_get_func(module, call->callee_name);
   if (!callee || !callee->name)
     return -1;
 
