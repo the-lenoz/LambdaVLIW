@@ -670,6 +670,27 @@ int DCE_func(SSAModule *module, SSAFuncName func)
   return 1;
 }
 
+int simplify_CFG_func(SSAModule *module, SSAFuncName func)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function || !require_predecessors_list(module, func))
+    return 0;
+
+  for (SSABasicBlockName i = 0; i < function->basic_blocks_count; ++i)
+  {
+    require_predecessors_list(module, func); // TODO optimize
+    if (!is_valid_bb(module, func, i) || i == function->entry_block)
+      continue;
+    SSABasicBlockList *preds = function->CFG_info.preds[i];
+    if (!preds || preds->next)
+      continue; // Require exactly one predecessor
+
+    merge_into_only_predecessor(module, func, i);
+  }
+
+  return 1;
+}
+
 int self_TCO_module(SSAModule *module)
 {
   if (!module)
@@ -718,6 +739,18 @@ int DCE_module(SSAModule *module)
   return optimized;
 }
 
+int simplify_CFG_module(SSAModule *module)
+{
+  if (!module)
+    return 0;
+  int optimized = 0;
+  for (SSAFuncName i = 0; i < module->functions_count; ++i)
+  {
+    optimized += simplify_CFG_func(module, i);
+  }
+  return optimized;
+}
+
 int optimize_module(SSAModule *module)
 {
   int result = 0;
@@ -725,5 +758,6 @@ int optimize_module(SSAModule *module)
   result += SCCP_module(module);
   result += UCE_module(module);
   result += DCE_module(module);
+  result += simplify_CFG_module(module);
   return result;
 }

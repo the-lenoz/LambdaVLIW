@@ -299,6 +299,8 @@ int emit_cond_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SS
 int emit_goto(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSABasicBlockName dst);
 int emit_return(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAValName ret_name);
 
+int merge_into_only_predecessor(SSAModule *module, SSAFuncName func, SSABasicBlockName BB);
+
 int add_phi_option(SSAModule *module, SSAFuncName fn, SSAValName val_name, PhiPair pair);
 int remove_phi_option_by_pred(SSAModule *module, SSAFuncName fn, SSAValName val_name, SSABasicBlockName pred);
 int ArgList_append(ArgList **list, SSAValName arg_name);

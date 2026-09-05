@@ -751,6 +751,55 @@ int emit_return(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAVa
   return 0;
 }
 
+int merge_into_only_predecessor(SSAModule *module, SSAFuncName func, SSABasicBlockName BB)
+{
+  SSAFunc *function = get_func(module, func);
+  if (!function || !require_predecessors_list(module, func) || !is_valid_bb(module, func, BB)) return 0;
+
+  SSABasicBlockList *preds = function->CFG_info.preds[BB];
+  if (!preds || preds->next || !is_valid_bb(module, func, preds->BB) || BB == function->entry_block)
+    return 0;  // require exactly one predecessor
+
+  SSABasicBlock *pred = &function->basic_blocks[preds->BB];
+  SSABasicBlock *bb = &function->basic_blocks[BB];
+
+  SSABasicBlockName pred_name = preds->BB;
+
+  if (bb->last_instr == SSA_INVALID_INSTR)
+    return 1; // Empty BB
+
+  clear_BB_terminator(module, func, preds->BB);
+  for (SSAInstrName i = bb->first_instr; i != SSA_INVALID_INSTR;)
+  {
+    SSAInstrName next = i->next;
+    if (i->kind == SSA_INSTR_VAL && function->values[i->val].kind == SSA_VALUE_PHI)
+      remove_instr(module, func, BB, i);
+    i = next;
+  }
+  if (bb->first_instr != SSA_INVALID_INSTR)
+  {
+    if (pred->first_instr == SSA_INVALID_INSTR)
+    {
+      pred->first_instr = bb->first_instr;
+      pred->last_instr = bb->last_instr;
+    }
+    else
+    {
+      pred->last_instr->next = bb->first_instr;
+      bb->first_instr->prev = pred->last_instr;
+      pred->last_instr = bb->last_instr;
+    }
+  }
+  bb->first_instr = SSA_INVALID_INSTR;
+  bb->last_instr = SSA_INVALID_INSTR;
+  destroy_BB(module, func, BB);
+
+  if (function->exit_block == BB)
+    set_exit_BB(module, func, pred_name);
+
+  return 1;
+}
+
 int add_phi_option(SSAModule *module, SSAFuncName fn, SSAValName val_name, PhiPair pair)
 {
   if (!module)
