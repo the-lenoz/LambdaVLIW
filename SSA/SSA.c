@@ -240,6 +240,25 @@ static int pop_value(SSAFunc *function, SSAValName value)
   return 1;
 }
 
+
+static int is_used_in_call(SSAFunc *func, _FuncCall call, SSAValName val)
+{
+  for (ArgList *arg = call.args; arg; arg = arg->next)
+    if (arg->name == val)
+      return 1;
+
+  return 0;
+}
+
+static int is_used_in_phi(SSAFunc *func, _PhiNode phi, SSAValName val)
+{
+  for (PhiList *option = phi.options; option; option = option->next)
+    if (option->pair.value_name == val)
+      return 1;
+
+  return 0;
+}
+
 SSAModule *new_module()
 {
   SSAModule *module = (SSAModule *)calloc(1, sizeof(SSAModule));
@@ -751,6 +770,16 @@ int emit_return(SSAModule *module, SSAFuncName func, SSABasicBlockName BB, SSAVa
   return 0;
 }
 
+static SSAValName get_phi_option_by_pred(_PhiNode node, SSABasicBlockName bb)
+{
+  for (PhiList *l = node.options; l; l = l->next)
+  {
+    if (bb == l->pair.previous_block_name)
+      return l->pair.value_name;
+  }
+  return SSA_INVALID_VAL;
+}
+
 int merge_into_only_predecessor(SSAModule *module, SSAFuncName func, SSABasicBlockName BB)
 {
   SSAFunc *function = get_func(module, func);
@@ -773,7 +802,14 @@ int merge_into_only_predecessor(SSAModule *module, SSAFuncName func, SSABasicBlo
   {
     SSAInstrName next = i->next;
     if (i->kind == SSA_INSTR_VAL && function->values[i->val].kind == SSA_VALUE_PHI)
+    {
+      SSAValName val = get_phi_option_by_pred(function->values[i->val].expr.phi, pred_name);
+      if (val != SSA_INVALID_VAL)
+      {
+        rename_all_val_uses(module, func, i->val, val);
+      }
       remove_instr(module, func, BB, i);
+    }
     i = next;
   }
   if (bb->first_instr != SSA_INVALID_INSTR)
@@ -1169,23 +1205,6 @@ static int replace_in_terminator(SSAFunc *func, SSABlockTerminator *term, SSAVal
   }
 }
 
-static int is_used_in_call(SSAFunc *func, _FuncCall call, SSAValName val)
-{
-  for (ArgList *arg = call.args; arg; arg = arg->next)
-    if (arg->name == val)
-      return 1;
-
-  return 0;
-}
-
-static int is_used_in_phi(SSAFunc *func, _PhiNode phi, SSAValName val)
-{
-  for (PhiList *option = phi.options; option; option = option->next)
-    if (option->pair.value_name == val)
-      return 1;
-
-  return 0;
-}
 
 SSAInstrList *find_all_val_usages(SSAModule *module, SSAFuncName func, SSAValName val)
 {
